@@ -2,15 +2,33 @@
 import { Item, Language } from '@/lib/types';
 import { MapPin, Trash2, Clock, Sparkles, Smartphone, Key, Car, Home, ShoppingBag, Book, Utensils, Package } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useState, useEffect, useRef } from 'react';
+import { memo, useState, useEffect, useRef, useMemo } from 'react';
 
 interface ItemCardProps {
   item: Item;
   onDelete: (id: string) => void;
   language: Language;
+  searchQuery?: string;
 }
 
-export function ItemCard({ item, onDelete, language }: ItemCardProps) {
+const HighlightedText = ({ text, query }: { text: string; query?: string }) => {
+  if (!query || !query.trim()) return <>{text}</>;
+  
+  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+  return (
+    <>
+      {parts.map((part, i) => 
+        part.toLowerCase() === query.toLowerCase() ? (
+          <span key={i} className="text-emerald-400 bg-emerald-400/20 px-0.5 rounded shadow-[0_0_8px_rgba(52,211,153,0.3)] font-bold">
+            {part}
+          </span>
+        ) : part
+      )}
+    </>
+  );
+};
+
+export const ItemCard = memo(function ItemCard({ item, onDelete, language, searchQuery }: ItemCardProps) {
   const [isConfirming, setIsConfirming] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -20,8 +38,8 @@ export function ItemCard({ item, onDelete, language }: ItemCardProps) {
     };
   }, []);
 
-  // eslint-disable-next-line react-hooks/purity
-  const isRecent = Date.now() - item.timestamp < 3600000; // Last 1 hour
+  const [now] = useState(() => Date.now());
+  const isRecent = now - item.timestamp < 3600000; // Last 1 hour
 
   const toTitleCase = (str: string) => {
     return str.replace(
@@ -65,8 +83,7 @@ export function ItemCard({ item, onDelete, language }: ItemCardProps) {
   }
 
   const getRelativeTime = (timestamp: number) => {
-    // eslint-disable-next-line react-hooks/purity
-    const diff = Date.now() - timestamp;
+    const diff = now - timestamp;
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
@@ -106,7 +123,9 @@ export function ItemCard({ item, onDelete, language }: ItemCardProps) {
               </span>
             )}
           </div>
-          <h3 className="text-base font-bold text-slate-100 tracking-tight">{toTitleCase(item.name)}</h3>
+          <h3 className="text-base font-bold text-slate-100 tracking-tight">
+            <HighlightedText text={toTitleCase(item.name)} query={searchQuery} />
+          </h3>
         </div>
         <button
           onClick={() => {
@@ -127,7 +146,9 @@ export function ItemCard({ item, onDelete, language }: ItemCardProps) {
       
       <div className="flex items-center gap-1.5 text-emerald-400/90 bg-emerald-400/5 p-1.5 px-2 rounded-lg border border-emerald-400/10">
         <MapPin className="w-3 h-3 shrink-0" />
-        <span className="font-semibold text-xs">{item.location}</span>
+        <span className="font-semibold text-xs">
+          <HighlightedText text={item.location} query={searchQuery} />
+        </span>
       </div>
 
       <div className="flex items-center justify-between text-slate-500 text-[9px] mt-1 border-t border-white/5 pt-2 font-bold uppercase tracking-widest">
@@ -139,15 +160,16 @@ export function ItemCard({ item, onDelete, language }: ItemCardProps) {
       </div>
     </motion.div>
   );
-}
+});
 
 interface ItemListProps {
   items: Item[];
   onDelete: (id: string) => void;
   language: Language;
+  searchQuery?: string;
 }
 
-export function ItemList({ items, onDelete, language }: ItemListProps) {
+export const ItemList = memo(function ItemList({ items, onDelete, language, searchQuery }: ItemListProps) {
   const emptyMessage = {
     su: "Teu acan aya barang nu dicatet, Kang.",
     id: "Belum ada barang yang dicatat nih, Kak.",
@@ -156,17 +178,48 @@ export function ItemList({ items, onDelete, language }: ItemListProps) {
 
   if (items.length === 0) {
     return (
-      <div className="text-center py-20 border-2 border-dashed border-white/5 rounded-3xl">
-        <p className="text-slate-500 italic">{emptyMessage}</p>
-      </div>
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="text-center py-16 border-2 border-dashed border-white/5 rounded-3xl bg-gradient-to-b from-white/[0.02] to-transparent relative overflow-hidden"
+      >
+        {/* Subtle Background Glow */}
+        <div className="absolute inset-0 bg-emerald-400/5 blur-3xl rounded-full -z-10 translate-y-10" />
+        
+        <motion.div 
+          animate={{ y: [0, -10, 0] }}
+          transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+          className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/5 border border-white/10 mb-4 shadow-xl"
+        >
+          <Package className="w-8 h-8 text-slate-500/50" />
+        </motion.div>
+        
+        <motion.p 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="text-slate-400 font-bold uppercase tracking-[0.2em] text-[10px] mb-2"
+        >
+          {language === 'en' ? 'System Ready' : (language === 'id' ? 'Sistem Siap' : 'Sistem Sayagi')}
+        </motion.p>
+        
+        <motion.p 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0.6 }}
+          transition={{ delay: 0.4 }}
+          className="text-slate-500 italic text-sm max-w-[200px] mx-auto leading-relaxed"
+        >
+          {emptyMessage}
+        </motion.p>
+      </motion.div>
     );
   }
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
       {items.map((item) => (
-        <ItemCard key={item.id} item={item} onDelete={onDelete} language={language} />
+        <ItemCard key={item.id} item={item} onDelete={onDelete} language={language} searchQuery={searchQuery} />
       ))}
     </div>
   );
-}
+});

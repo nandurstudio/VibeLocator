@@ -10,7 +10,10 @@ export interface Message {
   isSystem?: boolean;
   avatarState?: AvatarState;
   audioBase64?: string; // Cache for Gemini Speech
+  isGeneratingAudio?: boolean; // True while waiting for TTS API
   isFallback?: boolean; // True if using Browser TTS fallback
+  showFeedbackButton?: boolean; // True to show developer feedback button
+  technicalDetails?: string;
 }
 
 

@@ -57,5 +57,15 @@ Built specifically with a **Sundanese-Indonesian** soul, ViLo provides a warm, l
    npm run dev
    ```
 
+## 🚀 Recent Improvements (v2.7)
+- **⚡ Zero-Lag Performance**: Implemented comprehensive memoization for Chat Bubbles and Avatars, eliminating typing latency in long conversations.
+- **🔊 Audio Stability**: Added proactive `AudioContext` resuming to ensure reliable voice responses on mobile Safari and Chrome.
+- **📅 Smart Date Grouping**: Chat history is automatically categorized by time (Today, Yesterday, Earlier) for intuitive navigation.
+- **🔍 Real-Time Search Highlighting**: Visual emerald glow on matching text during inventory search for rapid item discovery.
+- **📈 Scroll Progress Indicator**: A sleek, high-tech vertical bar indicating scroll depth in long conversation logs.
+- **🏃 Adjustable TTS Speed**: Users can now control AI speaking rate from 0.5x to 2.0x.
+- **🩺 Rich Diagnostics**: Automated technical reporting for bugs, including localized email templates for Sundanese, Indonesian, and English.
+- **📦 Storage Awareness**: Real-time visual indicator for localStorage usage (200-item capacity).
+
 ## 📜 License
 ©2026 - **Nandur Studio**. Built with ❤️ for JuaraVibe Coding Competition.

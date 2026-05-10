@@ -45,6 +45,7 @@ export async function processVoiceInput(text: string, currentItems: any[], lang:
     2. JANGAN JADI ROBOT: Jika user berterima kasih atau sekadar ngobrol, balas dengan ramah. Jangan kaku terus-menerus bilang "Saya asisten lokasi".
     3. EMPATI KONTEKSTUAL: Jika user mencari barang, bantu dengan kalimat yang suportif (misal: "Coba cek di X ya Kak, seingatku tadi disimpan di sana").
     4. RINGKAS TAPI HANGAT: Jaga agar jawaban tetap ringkas tapi tetap terasa "manusiawi".
+    5. STT DENOISING (PENTING): Seringkali input dari STT berantakan atau mengulang kata (misal: "kunci motor motorola"). Gunakan logika untuk membersihkan noise tersebut secara cerdas. Jika ada kata yang terdengar seperti "salah dengar" atau pengulangan yang tidak logis, ABAIKAN noise-nya dan ambil intinya saja (misal: ambil "Kunci Motor" saja).
 
     Daftar barang saat ini: ${JSON.stringify(currentItems)}
     
@@ -60,7 +61,7 @@ export async function processVoiceInput(text: string, currentItems: any[], lang:
 
   try {
     const result = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       contents: text,
       config: {
         systemInstruction,
@@ -126,7 +127,16 @@ export async function generateSpeech(text: string): Promise<string | null> {
 
 let audioContext: AudioContext | null = null;
 
-export function playAudioFromBase64(base64: string) {
+export async function resumeAudioContext() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+  }
+  if (audioContext.state === 'suspended') {
+    await audioContext.resume();
+  }
+}
+
+export function playAudioFromBase64(base64: string, speed: number = 1.0) {
   try {
     // Convert base64 to ArrayBuffer
     const binary = atob(base64);
@@ -156,6 +166,7 @@ export function playAudioFromBase64(base64: string) {
 
     const source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
+    source.playbackRate.value = speed;
     source.connect(audioContext.destination);
     
     if (audioContext.state === 'suspended') {

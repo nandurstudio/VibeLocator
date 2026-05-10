@@ -1,23 +1,154 @@
 'use client';
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { Search, Loader2, Trash2, History, Volume2, VolumeX, Ear, EarOff, ChevronDown, Send, Mic } from 'lucide-react';
+import { useEffect, useState, useRef, useCallback, useMemo, memo } from 'react';
+import { Search, Loader2, Trash2, History, Volume2, VolumeX, Ear, EarOff, ChevronDown, Send, Mic, X, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MicButton } from '@/components/MicButton';
 import { ItemList } from '@/components/ItemList';
 import { ViloAvatar } from '@/components/ViloAvatar';
 import { useItems } from '@/hooks/use-items';
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition';
-import { processVoiceInput, generateSpeech, playAudioFromBase64 } from '@/lib/gemini';
+import { processVoiceInput, generateSpeech, playAudioFromBase64, resumeAudioContext } from '@/lib/gemini';
 import { Language, Message } from '@/lib/types';
 import { Languages } from 'lucide-react';
 
+const formatUserMessage = (text: string): string => {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  if (/[.!?]$/.test(trimmed)) return trimmed;
+
+  const questionMarkers = [
+    // ID
+    'apa', 'siapa', 'dimana', 'di mana', 'kapan', 'mengapa', 'kenapa', 'bagaimana', 'berapa', 'mana', 'apakah', 'siapakah', 'manakah', 'bolehkah', 'bisakah',
+    // SU
+    'naon', 'saha', 'iraha', 'naha', 'kumaha', 'sabaraha', 'dupi', 'naha',
+    // EN
+    'what', 'who', 'where', 'when', 'why', 'how', 'which', 'do ', 'does ', 'did ', 'is ', 'are ', 'can ', 'could '
+  ];
+
+  const lowerText = trimmed.toLowerCase();
+
+  // Check if it starts with a question marker OR contains certain markers with spaces around them
+  const isQuestion = questionMarkers.some(marker =>
+    lowerText.startsWith(marker) || lowerText.includes(' ' + marker)
+  ) || lowerText.endsWith(' ya') || lowerText.endsWith(' nya'); // Handle "ya" or "nya" at the end which often indicates a question in casual talk
+
+  return isQuestion ? `${trimmed}?` : trimmed;
+};
+
+const ChatMessage = memo(({
+  msg,
+  isFirst,
+  isLast,
+  isStandalone,
+  language,
+  formatTime,
+  youName,
+  feedbackSubject,
+  feedbackBody,
+  onReplay
+}: {
+  msg: Message,
+  isFirst: boolean,
+  isLast: boolean,
+  isStandalone: boolean,
+  language: Language,
+  formatTime: (ts: number) => string,
+  youName: string,
+  feedbackSubject: string,
+  feedbackBody: string,
+  onReplay: (msg: Message) => void
+}) => {
+  return (
+    <motion.div
+      layout="position"
+      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      className={`flex w-full ${msg.role === 'user' ? 'justify-end mt-1' : 'justify-start'} ${isFirst ? 'mt-4' : ''}`}
+    >
+      {msg.role === 'user' ? (
+        <div className="bg-emerald-400 text-slate-900 py-2 px-4 rounded-2xl rounded-tr-none shadow-xl shadow-emerald-400/10 max-w-[85%] flex flex-col items-end">
+          <div className="w-full text-left">
+            <p className="text-[9px] uppercase font-bold opacity-50 mb-0.5 tracking-widest">
+              <span>{youName}</span>
+            </p>
+            <p className="text-sm font-bold leading-snug whitespace-pre-wrap break-words">
+              {msg.content}
+            </p>
+          </div>
+          <span className="text-[8px] font-bold opacity-40 uppercase pt-1 -mb-1">
+            {formatTime(msg.timestamp)}
+          </span>
+        </div>
+      ) : (
+        <div className={`flex items-start gap-1 w-full ${!isFirst ? 'mt-1' : 'mt-0'}`}>
+          <div className={`scale-[0.45] ml-0 origin-top-left shrink-0 w-8 ${!isFirst ? 'invisible h-0' : '-mt-1'}`}>
+            <ViloAvatar state={msg.avatarState || 'idle'} />
+          </div>
+          <div className={`glass py-2 px-3 border flex flex-col w-full ${isStandalone ? 'rounded-2xl rounded-tl-none shadow-xl' :
+              isFirst ? 'rounded-tr-2xl rounded-tl-none shadow-none border-b-0' :
+                isLast ? 'rounded-br-2xl rounded-bl-2xl rounded-tr-none rounded-tl-none shadow-xl' :
+                  'rounded-none rounded-tr-none rounded-tl-none shadow-none border-b-0'
+            } ${msg.isSystem ? 'border-white/5 opacity-70 bg-slate-900/40' : 'border-emerald-400/10'} ${(isLast || isStandalone) ? (msg.isSystem ? 'shadow-white/5' : 'shadow-emerald-500/10') : ''}`}>
+            <div className="flex-1 min-w-0 pr-1 mt-0 flex flex-col">
+              {isFirst && (
+                <p className={`text-[9px] mb-0.5 uppercase tracking-widest font-extrabold flex justify-between items-center ${msg.isSystem ? 'text-slate-500' : 'text-emerald-400 opacity-90'}`}>
+                  ViLo AI
+                </p>
+              )}
+              <p className={`whitespace-pre-wrap break-words ${msg.isSystem ? 'text-xs text-slate-400 italic leading-relaxed' : 'text-sm text-slate-200 leading-relaxed font-medium'}`}>
+                {msg.content}
+              </p>
+
+              {/* Feedback Button */}
+              {msg.showFeedbackButton && (
+                <a
+                  href={`mailto:founder@nandurstudio.com?subject=${encodeURIComponent(feedbackSubject)}&body=${encodeURIComponent(`${feedbackBody}\n\n--- DIAGNOSTIC DATA ---\n${msg.technicalDetails || 'No technical data available.'}\n------------------------`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 flex items-center justify-center gap-2 py-2 px-4 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-emerald-400/20 transition-all active:scale-95 relative z-20 cursor-pointer pointer-events-auto no-underline"
+                >
+                  <Languages className="w-3 h-3" />
+                  {language === 'en' ? 'Contact Developer' : 'Lapor Developer'}
+                </a>
+              )}
+              {/* TTS Indicator */}
+              {msg.isGeneratingAudio && (
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-white/5 opacity-60">
+                  <div className="flex gap-[2px] items-end h-[12px]">
+                    <motion.div animate={{ height: [4, 10, 4] }} transition={{ repeat: Infinity, duration: 0.8 }} className="w-1 bg-emerald-400 rounded-full" />
+                    <motion.div animate={{ height: [4, 12, 4] }} transition={{ repeat: Infinity, duration: 0.8, delay: 0.2 }} className="w-1 bg-emerald-400 rounded-full" />
+                    <motion.div animate={{ height: [4, 8, 4] }} transition={{ repeat: Infinity, duration: 0.8, delay: 0.4 }} className="w-1 bg-emerald-400 rounded-full" />
+                  </div>
+                  <span className="text-[9px] uppercase tracking-widest font-bold text-slate-400">Synthesizing Audio...</span>
+                </div>
+              )}
+              <div className="flex justify-between items-end gap-2 pt-1 -mb-1">
+                <div className="flex items-center gap-2">
+                  {(msg.audioBase64 || msg.isFallback) && (
+                    <button
+                      onClick={() => onReplay(msg)}
+                      className="flex items-center gap-1 hover:bg-emerald-400/20 px-1.5 py-0.5 rounded-md transition-colors group/replay"
+                      title="Replay Audio"
+                    >
+                      <Volume2 className="w-2.5 h-2.5 text-emerald-400 opacity-60 group-hover/replay:opacity-100 transition-opacity" />
+                      {msg.isFallback && <span className="text-[7px] text-slate-500 uppercase font-black tracking-tighter">Fallback</span>}
+                    </button>
+                  )}
+                </div>
+                <span className={`text-[8px] font-bold opacity-30 uppercase pt-1 ${msg.isSystem ? 'text-slate-400' : 'text-emerald-400'}`}>
+                  {formatTime(msg.timestamp)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+});
+ChatMessage.displayName = 'ChatMessage';
+
 export default function Home() {
-  const { items, saveItem, updateItem, deleteItem, clearItems, findItem, findItems } = useItems();
-  const { isListening, isWakeWordMode, transcript, interimTranscript, startListening, stopListening, setTranscript } = useSpeechRecognition();
-  const [processingStatus, setProcessingStatus] = useState<'idle' | 'processing' | 'confirming' | 'error'>('idle');
-  const [isWakeWordEnabled, setIsWakeWordEnabled] = useState(false);
-  const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
-  const [standbyTimeout, setStandbyTimeout] = useState(5);
   const [messages, setMessages] = useState<Message[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [language, setLanguage] = useState<Language>('su');
@@ -30,7 +161,65 @@ export default function Home() {
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [chatScrollState, setChatScrollState] = useState({ top: false, bottom: false });
+  const [chatScrollProgress, setChatScrollProgress] = useState(0);
   const [currentThinkingMessage, setCurrentThinkingMessage] = useState('');
+  const [voiceSpeed, setVoiceSpeed] = useState(1.0);
+  const [isSupported, setIsSupported] = useState(true);
+  const [processingStatus, setProcessingStatus] = useState<'idle' | 'processing' | 'confirming' | 'error'>('idle');
+  const [isWakeWordEnabled, setIsWakeWordEnabled] = useState(false);
+  const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
+  const [standbyTimeout, setStandbyTimeout] = useState(5);
+
+  const { items, saveItem, updateItem, deleteItem, clearItems, findItem, findItems } = useItems();
+  const { isListening, isWakeWordMode, transcript, interimTranscript, startListening, stopListening, setTranscript } = useSpeechRecognition();
+
+  // const logEvent = useCallback((action: string, metadata: any = {}) => {
+  //   // In production, this would send to an analytics service (Posthog, Mixpanel, etc.)
+  //   console.log(`[ViLo Analytics] ${action}:`, {
+  //     ...metadata,
+  //     timestamp: new Date().toISOString(),
+  //     language
+  //   });
+  // }, [language]);
+
+  const renderSTTContent = () => {
+    if (!transcript && !interimTranscript) {
+      return <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ repeat: Infinity, duration: 0.8 }} className="inline text-emerald-400 font-bold ml-[2px]">_</motion.span>;
+    }
+
+    if (interimTranscript) {
+      // Pisahkan kata terakhir dari interim untuk diberi cursor sticky
+      const match = interimTranscript.match(/(.*?)(\S+)?$/);
+      const prefix = match ? match[1] : interimTranscript;
+      const lastWord = match && match[2] ? match[2] : "";
+
+      return (
+        <span style={{ whiteSpace: 'pre-wrap' }}>
+          {transcript && <span className="text-white font-medium">{transcript}</span>}
+          {prefix && <span className="text-emerald-400 italic opacity-75">{prefix}</span>}
+          <span className="whitespace-nowrap">
+            <span className="text-emerald-400 italic opacity-75">{lastWord}</span>
+            <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ repeat: Infinity, duration: 0.8 }} className="inline text-emerald-400 font-bold ml-[2px]">_</motion.span>
+          </span>
+        </span>
+      );
+    } else {
+      // Pisahkan kata terakhir dari transcript (firm)
+      const match = transcript.match(/(.*?)(\S+)?$/);
+      const prefix = match ? match[1] : transcript;
+      const lastWord = match && match[2] ? match[2] : "";
+
+      return (
+        <span style={{ whiteSpace: 'pre-wrap' }}>
+          {prefix && <span className="text-white font-medium">{prefix}</span>}
+          <span className="whitespace-nowrap">
+            <span className="text-white font-medium">{lastWord}</span>
+            <motion.span animate={{ opacity: [1, 0, 1] }} transition={{ repeat: Infinity, duration: 0.8 }} className="inline text-emerald-400 font-bold ml-[2px]">_</motion.span>
+          </span>
+        </span>
+      );
+    }
+  };
 
   const clearHistoryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const clearAllTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -58,6 +247,15 @@ export default function Home() {
 
         const savedHq = localStorage.getItem('vibelocator_hq');
         if (savedHq !== null) setIsHqEnabled(savedHq === 'true');
+
+        const savedSpeed = localStorage.getItem('vibelocator_voice_speed');
+        if (savedSpeed !== null) setVoiceSpeed(parseFloat(savedSpeed));
+
+        // Check for Speech Recognition support
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+          setIsSupported(false);
+        }
       } catch (e) {
         console.warn("Failed to load settings from localStorage:", e);
       }
@@ -117,13 +315,13 @@ export default function Home() {
 
   const MAX_MESSAGES = 100;
 
-  const saveMessages = (msgs: Message[]) => {
+  const saveMessages = useCallback((msgs: Message[]) => {
     // Cap at MAX_MESSAGES — keep latest messages
     const capped = msgs.length > MAX_MESSAGES ? msgs.slice(msgs.length - MAX_MESSAGES) : msgs;
     setMessages(capped);
     localStorage.setItem('vibelocator_messages', JSON.stringify(capped));
     lastActivityRef.current = Date.now();
-  };
+  }, []);
 
   useEffect(() => {
     const savedVoice = localStorage.getItem('vibelocator_voice');
@@ -133,17 +331,21 @@ export default function Home() {
     }
   }, []);
 
-  const toggleVoice = () => {
+  const toggleVoice = useCallback(() => {
+    resumeAudioContext();
     const newVal = !voiceEnabled;
     setVoiceEnabled(newVal);
     localStorage.setItem('vibelocator_voice', String(newVal));
-  };
+    // logEvent('toggle_voice', { enabled: newVal });
+  }, [voiceEnabled]);
 
-  const toggleHq = () => {
+  const toggleHq = useCallback(() => {
+    resumeAudioContext();
     const newVal = !isHqEnabled;
     setIsHqEnabled(newVal);
     localStorage.setItem('vibelocator_hq', String(newVal));
-  };
+    // logEvent('toggle_hq', { enabled: newVal });
+  }, [isHqEnabled]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -163,18 +365,17 @@ export default function Home() {
     }
   }, [isListening, isWakeWordMode, transcript, interimTranscript]);
 
-  // State initializers now handle localStorage, so the effect is removed.
-
-
-  const toggleWakeWord = () => {
+  const toggleWakeWord = useCallback(() => {
+    resumeAudioContext();
     const newVal = !isWakeWordEnabled;
     setIsWakeWordEnabled(newVal);
     localStorage.setItem('vibelocator_wake', String(newVal));
+    // logEvent('toggle_wakeword', { enabled: newVal });
     lastActivityRef.current = Date.now();
     if (!newVal) {
       stopListening();
     }
-  };
+  }, [isWakeWordEnabled, stopListening]);
 
   const getSTTLanguageCode = (lang: Language) => {
     if (lang === 'su') return 'su-ID';
@@ -208,7 +409,7 @@ export default function Home() {
       }
     }, 30000); // Check every 30s for better accuracy
     return () => clearInterval(interval);
-  }, [isWakeWordEnabled, language, messages, standbyTimeout, stopListening]);
+  }, [isWakeWordEnabled, language, messages, standbyTimeout, stopListening, saveMessages]);
 
   useEffect(() => {
     // If wake word is enabled and we are not doing anything, start wake word listening
@@ -216,21 +417,26 @@ export default function Home() {
       const timer = setTimeout(() => {
         startListening(getSTTLanguageCode(language), true, () => {
           setIsWakingUp(true);
+          lastActivityRef.current = Date.now(); // Reset standby timer immediately on wake!
           setTimeout(() => setIsWakingUp(false), 1000);
-          // Wake word detected! Larger delay to avoid capturing the trigger word itself
+          // Wake word detected! Faster transition to avoid cutting off the command
           setTimeout(() => {
             if (isWakeWordEnabled) {
               startListening(getSTTLanguageCode(language));
             }
-          }, 1200);
+          }, 300); // Reduced from 1200ms to 300ms
         });
       }, 500);
       return () => clearTimeout(timer);
     }
   }, [isWakeWordEnabled, isListening, processingStatus, language, startListening, isTyping]);
 
-  // Initializers handle these now.
-
+  // Reset standby timer whenever there is voice activity
+  useEffect(() => {
+    if (transcript || interimTranscript) {
+      lastActivityRef.current = Date.now();
+    }
+  }, [transcript, interimTranscript]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -259,18 +465,99 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+
+  const groupMessagesByDate = useCallback((msgs: Message[]) => {
+    const groups: { label: string; messages: Message[] }[] = [];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const yesterday = today - 24 * 60 * 60 * 1000;
+
+    msgs.forEach(msg => {
+      let label = '';
+      if (msg.timestamp >= today) {
+        label = language === 'en' ? 'Today' : (language === 'id' ? 'Hari Ini' : 'Dinten Ieu');
+      } else if (msg.timestamp >= yesterday) {
+        label = language === 'en' ? 'Yesterday' : (language === 'id' ? 'Kemarin' : 'Kamari');
+      } else {
+        const date = new Date(msg.timestamp);
+        label = date.toLocaleDateString(language === 'en' ? 'en-US' : (language === 'id' ? 'id-ID' : 'id-ID'), {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric'
+        });
+      }
+
+      const existingGroup = groups.find(g => g.label === label);
+      if (existingGroup) {
+        existingGroup.messages.push(msg);
+      } else {
+        groups.push({ label, messages: [msg] });
+      }
+    });
+
+    return groups;
+  }, [language]);
+
   const handleChatScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
     setChatScrollState({
       top: scrollTop > 0,
       bottom: Math.ceil(scrollTop + clientHeight) < scrollHeight
     });
+    
+    // Calculate progress percentage (0 to 100)
+    const totalScrollable = scrollHeight - clientHeight;
+    const progress = totalScrollable > 0 ? (scrollTop / totalScrollable) * 100 : 0;
+    setChatScrollProgress(progress);
   }, []);
 
   const handleLanguageChange = (lang: Language) => {
+    resumeAudioContext();
     setLanguage(lang);
     localStorage.setItem('vibelocator_lang', lang);
   };
+
+  const performSpeech = useCallback(async (text: string, msgId: string, lang: Language) => {
+    if (!voiceEnabled) return;
+
+    if (isHqEnabled) {
+      try {
+        const audioBase64 = await generateSpeech(text);
+        if (audioBase64) {
+          playAudioFromBase64(audioBase64, voiceSpeed);
+          // Update the message in state to cache the audio and remove loading state
+          setMessages(prev => prev.map(m => m.id === msgId ? { ...m, audioBase64, isGeneratingAudio: false } : m));
+          return;
+        }
+      } catch (e) {
+        console.warn("Gemini Speech failed, falling back to Browser TTS", e);
+      }
+    }
+
+    // Fallback: Browser Web Speech API
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang === 'su' ? 'id-ID' : (lang === 'en' ? 'en-US' : 'id-ID');
+    utterance.rate = voiceSpeed;
+    utterance.pitch = 1.1;
+    window.speechSynthesis.speak(utterance);
+
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, isFallback: true, isGeneratingAudio: false } : m));
+  }, [voiceEnabled, isHqEnabled, voiceSpeed, setMessages]);
+
+  const handleReplay = useCallback((msg: Message) => {
+    if (!voiceEnabled) return;
+    // logEvent('audio_replay', { messageId: msg.id, role: msg.role });
+
+    if (msg.audioBase64) {
+      playAudioFromBase64(msg.audioBase64, voiceSpeed);
+    } else {
+      const utterance = new SpeechSynthesisUtterance(msg.content);
+      utterance.lang = language === 'su' ? 'id-ID' : (language === 'en' ? 'en-US' : 'id-ID');
+      utterance.rate = voiceSpeed;
+      utterance.pitch = 1.1;
+      window.speechSynthesis.speak(utterance);
+    }
+  }, [voiceEnabled, voiceSpeed, language]);
 
   const handleInput = useCallback(async (textOverride?: string) => {
     lastActivityRef.current = Date.now();
@@ -280,8 +567,10 @@ export default function Home() {
       setIsTyping(false);
     }
 
-    const textToProcess = (textOverride || manualText).trim().slice(0, 500); // Max 500 chars
-    if (!textToProcess || processingStatus === 'processing' || processingStatus === 'confirming') return;
+    const rawText = (textOverride || manualText).trim().slice(0, 500); // Max 500 chars
+    if (!rawText || processingStatus === 'processing' || processingStatus === 'confirming') return;
+
+    const textToProcess = formatUserMessage(rawText);
 
     setManualText('');
     const textarea = document.getElementById('manual-input') as HTMLTextAreaElement;
@@ -297,35 +586,9 @@ export default function Home() {
 
     const newMessages = [...messages, userMsg];
     saveMessages(newMessages);
+    // logEvent('message_sent', { length: textToProcess.length });
 
     setProcessingStatus('processing');
-
-    const performSpeech = async (text: string, msgId: string, lang: Language) => {
-      if (!voiceEnabled) return;
-
-      if (isHqEnabled) {
-        try {
-          const audioBase64 = await generateSpeech(text);
-          if (audioBase64) {
-            playAudioFromBase64(audioBase64);
-            // Update the message in state to cache the audio
-            setMessages(prev => prev.map(m => m.id === msgId ? { ...m, audioBase64 } : m));
-            return;
-          }
-        } catch (e) {
-          console.warn("Gemini Speech failed, falling back to Browser TTS", e);
-        }
-      }
-
-      // Fallback: Browser Web Speech API
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = lang === 'su' ? 'id-ID' : (lang === 'en' ? 'en-US' : 'id-ID');
-      utterance.rate = 1.0;
-      utterance.pitch = 1.1;
-      window.speechSynthesis.speak(utterance);
-
-      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, isFallback: true } : m));
-    };
 
     try {
       const result = await processVoiceInput(textToProcess, items, language);
@@ -336,7 +599,8 @@ export default function Home() {
         role: 'assistant',
         content: result.message,
         timestamp: Date.now(),
-        avatarState: result.avatarState ?? 'idle'
+        avatarState: result.avatarState ?? 'idle',
+        isGeneratingAudio: voiceEnabled && isHqEnabled
       };
       // Clear processing status BEFORE adding message to avoid it appearing after the bubble
       setProcessingStatus('idle');
@@ -366,18 +630,30 @@ export default function Home() {
 
       // Trigger Smart Speech
       await performSpeech(result.message, assistantMsgId, language);
-      
-      lastActivityRef.current = Date.now();
-    } catch (error) {
-      console.error("Error processing input:", error);
-      let errorMsg = language === 'su' ? "Punten, aya masalah sakedap pas ngolah datana." :
-        (language === 'id' ? "Maaf, ada masalah saat memproses permintaan Kakak." :
-          "Sorry, something went wrong processing your request.");
 
-      if ((error instanceof Error && error.message.includes('429')) || (error as any)?.status === 429 || (error as any)?.message?.includes('429')) {
+      lastActivityRef.current = Date.now();
+    } catch (error: any) {
+      console.error("Error processing input:", error);
+
+      let errorMsg = "";
+      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+      const apiMessage = error?.message || error?.error?.message || "";
+      const statusCode = error?.status || error?.error?.code || 0;
+
+      if (isOffline) {
+        errorMsg = language === 'su' ? "Duh, janten sesah... internetna nuju pegat, Kak." :
+          (language === 'id' ? "Aduh, sepertinya internet Kakak terputus nih." : "You seem to be offline.");
+      } else if (statusCode === 429 || apiMessage.includes('429')) {
         errorMsg = language === 'su' ? "Punten pisan, kuota AI nuju seep. Mangga ditaros deui engké." :
-          (language === 'id' ? "Maaf ya, kuota AI sedang habis. Silakan coba lagi nanti." :
-            "Sorry, the AI quota is currently exceeded. Please try again later.");
+          (language === 'id' ? "Maaf ya, kuota AI sedang habis. Silakan coba lagi nanti." : "AI quota exceeded.");
+      } else if (statusCode === 500) {
+        errorMsg = language === 'su' ? "Server Google nuju ruksak (500). Cobian sakedap deui nya." :
+          (language === 'id' ? "Server Google sedang bermasalah (500). Coba sebentar lagi ya." : "Google Server error (500).");
+      } else if (apiMessage && apiMessage.length < 100) {
+        errorMsg = (language === 'su' ? "Aya masalah ti pusat: " : (language === 'id' ? "Ada masalah dari pusat: " : "API Error: ")) + apiMessage;
+      } else {
+        errorMsg = language === 'su' ? "Punten, aya masalah sakedap pas ngolah datana." :
+          (language === 'id' ? "Maaf, ada masalah saat memproses permintaan Kakak." : "Something went wrong.");
       }
 
       const assistantMsg: Message = {
@@ -388,7 +664,29 @@ export default function Home() {
         isSystem: true,
         avatarState: 'error'
       };
-      saveMessages([...newMessages, assistantMsg]);
+
+      const techData = [
+        `Error: ${apiMessage || 'Unknown'}`,
+        `Status: ${statusCode}`,
+        `Language: ${language}`,
+        `Inventory Count: ${items.length}`,
+        `Voice: ${voiceEnabled ? 'ON' : 'OFF'} (HQ: ${isHqEnabled ? 'YES' : 'NO'})`,
+        `UserAgent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A'}`,
+        `Timestamp: ${new Date().toISOString()}`
+      ].join('\n');
+
+      const feedbackMsg: Message = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: language === 'su' ? "Bilih peryogi bantosan, mangga lapor ka developer." :
+          (language === 'id' ? "Jika butuh bantuan, silakan lapor ke developer ya." : "If you need help, please report to the developer."),
+        timestamp: Date.now() + 1,
+        isSystem: true,
+        showFeedbackButton: true,
+        technicalDetails: techData
+      };
+
+      saveMessages([...newMessages, assistantMsg, feedbackMsg]);
 
       // Speak error with fallback
       const utterance = new SpeechSynthesisUtterance(errorMsg);
@@ -399,8 +697,9 @@ export default function Home() {
       setProcessingStatus('error');
     } finally {
       setTranscript('');
+      lastActivityRef.current = Date.now();
     }
-  }, [items, processingStatus, saveItem, deleteItem, updateItem, findItems, setTranscript, language, manualText, messages, voiceEnabled, isHqEnabled]);
+  }, [items, processingStatus, saveItem, deleteItem, updateItem, findItems, setTranscript, language, manualText, messages, voiceEnabled, isHqEnabled, saveMessages, performSpeech]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -417,21 +716,21 @@ export default function Home() {
     }
   }, [isListening, transcript, handleInput, isWakeWordMode]);
 
-  const filteredItems = items.filter(i =>
+  const filteredItems = useMemo(() => items.filter(i =>
     i.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     i.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (i.category && i.category.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  ), [items, searchQuery]);
 
-  const clearHistory = () => {
+  const clearHistory = useCallback(() => {
     saveMessages([]);
-  };
+  }, [saveMessages]);
 
-  const formatTime = (ts: number) => {
+  const formatTime = useCallback((ts: number) => {
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
+  }, []);
 
-  const uiStrings = {
+  const uiStrings = useMemo(() => ({
     su: {
       title: "VibeLocator",
       subtitle: "\"Poho disimpen dimana? Kalem bae... ViLo siap nambihan ingetan.\"",
@@ -461,7 +760,13 @@ export default function Home() {
       quotaLabel: "Status Kuota AI",
       hqToggle: "Sora High-Quality",
       voiceTooltip: "Hurungkeun/Pareumkeun Sora AI",
-      wakeTooltip: "Nguping Tuluy (Saurkeun 'Hey ViLo')"
+      wakeTooltip: "Nguping Tuluy (Saurkeun 'Hey ViLo')",
+      feedbackSubject: "Laporan Masalah ViLo",
+      feedbackBody: "Sampurasun Nandur Studio,\n\nPunten, abdi mendak masalah dina ViLo:\n\n[Seratkeun masalahna di dieu]",
+      speedLabel: "Laju Sora",
+      browserWarning: "Punten, browser ieu teu acan ngarojong Mic sacara pinuh. Cobian nganggo Chrome atanapi Edge nya Kak.",
+      storageLabel: "Kapasitas Inventaris",
+      capacityFull: "Inventaris Pinuh!"
     },
     id: {
       title: "VibeLocator",
@@ -492,7 +797,13 @@ export default function Home() {
       quotaLabel: "Status Kuota AI",
       hqToggle: "Suara High-Quality",
       voiceTooltip: "Aktifkan/Matikan Suara AI",
-      wakeTooltip: "Selalu Mendengarkan (Panggil 'Hey ViLo')"
+      wakeTooltip: "Selalu Mendengarkan (Panggil 'Hey ViLo')",
+      feedbackSubject: "Laporan Error ViLo",
+      feedbackBody: "Halo Nandur Studio,\n\nSaya menemukan masalah pada ViLo:\n\n[Tuliskan deskripsi masalah di sini]",
+      speedLabel: "Kecepatan Suara",
+      browserWarning: "Maaf, browser ini belum mendukung fitur Mic sepenuhnya. Coba pakai Chrome atau Edge ya Kak.",
+      storageLabel: "Kapasitas Inventaris",
+      capacityFull: "Inventaris Penuh!"
     },
     en: {
       title: "VibeLocator",
@@ -523,9 +834,15 @@ export default function Home() {
       quotaLabel: "AI Quota Status",
       hqToggle: "High-Quality Audio",
       voiceTooltip: "Toggle AI Voice Response",
-      wakeTooltip: "Always Listening (Say 'Hey ViLo')"
+      wakeTooltip: "Always Listening (Say 'Hey ViLo')",
+      feedbackSubject: "ViLo Error Report",
+      feedbackBody: "Hello Nandur Studio,\n\nI encountered an issue with ViLo:\n\n[Write more details here]",
+      speedLabel: "Voice Speed",
+      browserWarning: "Sorry, this browser doesn't fully support Mic features. Please try Chrome or Edge.",
+      storageLabel: "Inventory Capacity",
+      capacityFull: "Inventory Full!"
     }
-  }[language];
+  }[language]), [language]);
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -600,17 +917,30 @@ export default function Home() {
                       </button>
                     </div>
 
+                    {!isSupported && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-3"
+                      >
+                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                        <p className="text-[10px] font-medium text-amber-200/70 leading-tight">
+                          {uiStrings.browserWarning}
+                        </p>
+                      </motion.div>
+                    )}
+
                     <AnimatePresence>
                       {isSettingsExpanded && (
                         <motion.div
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: 'auto' }}
                           exit={{ opacity: 0, height: 0 }}
-                          className="flex flex-col gap-4 overflow-hidden absolute top-full right-0 mt-2 w-full md:w-64 z-50 glass p-4 rounded-3xl shadow-2xl"
+                          className="flex flex-col gap-1 overflow-hidden absolute top-full right-0 mt-2 w-full md:w-64 z-50 glass p-2 rounded-[2rem] shadow-2xl"
                         >
                           <button
                             onClick={toggleVoice}
-                            className={`p-1 px-4 py-2.5 rounded-2xl border border-white/5 flex items-center justify-between gap-3 transition-all ${voiceEnabled ? 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20' : 'bg-slate-900/50 text-slate-500'
+                            className={`p-1 px-4 py-2.5 rounded-t-[1.5rem] rounded-b-sm border border-white/5 flex items-center justify-between gap-3 transition-all ${voiceEnabled ? 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20' : 'bg-slate-900/50 text-slate-500'
                               }`}
                             title={uiStrings.voiceTooltip}
                           >
@@ -627,7 +957,7 @@ export default function Home() {
 
                           <button
                             onClick={toggleHq}
-                            className={`p-1 px-4 py-2.5 rounded-2xl border border-white/5 flex items-center justify-between gap-3 transition-all ${isHqEnabled ? 'bg-amber-400/10 text-amber-400 border-amber-400/20' : 'bg-slate-900/50 text-slate-500'
+                            className={`p-1 px-4 py-2.5 rounded-sm border border-white/5 flex items-center justify-between gap-3 transition-all ${isHqEnabled ? 'bg-amber-400/10 text-amber-400 border-amber-400/20' : 'bg-slate-900/50 text-slate-500'
                               }`}
                             title={uiStrings.hqToggle}
                           >
@@ -642,7 +972,27 @@ export default function Home() {
                             </div>
                           </button>
 
-                          <div className="flex flex-col gap-2 p-3 bg-slate-900/50 rounded-2xl border border-white/5 mt-1">
+                          <div className="flex flex-col gap-3 p-3 bg-slate-900/50 rounded-sm border border-white/5">
+                            <div className="flex justify-between items-center px-1">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{uiStrings.speedLabel}</span>
+                              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">{voiceSpeed.toFixed(1)}x</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0.5"
+                              max="2.0"
+                              step="0.1"
+                              value={voiceSpeed}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                setVoiceSpeed(val);
+                                localStorage.setItem('vibelocator_voice_speed', String(val));
+                              }}
+                              className="w-full accent-emerald-400 bg-slate-800 rounded-lg h-1 appearance-none cursor-pointer"
+                            />
+                          </div>
+
+                          <div className="flex flex-col gap-2 p-3 bg-slate-900/50 rounded-sm border border-white/5">
                             <div className="flex justify-between items-center">
                               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{uiStrings.quotaLabel}</span>
                               <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Healthy</span>
@@ -657,9 +1007,30 @@ export default function Home() {
                             <p className="text-[9px] text-slate-500 italic">&quot;Optimized for High Performance Mode&quot;</p>
                           </div>
 
+                          <div className="flex flex-col gap-2 p-3 bg-slate-900/50 rounded-sm border border-white/5">
+                            <div className="flex justify-between items-center">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{uiStrings.storageLabel}</span>
+                              <span className={`text-[10px] font-bold uppercase tracking-widest ${items.length >= 200 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                {items.length}/200
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${Math.min((items.length / 200) * 100, 100)}%` }}
+                                className={`h-full transition-all duration-500 ${items.length >= 200 ? 'bg-amber-400' : 'bg-emerald-400/50'}`}
+                              />
+                            </div>
+                            {items.length >= 200 && (
+                              <p className="text-[9px] text-amber-400 font-bold uppercase tracking-tighter italic">
+                                {uiStrings.capacityFull}
+                              </p>
+                            )}
+                          </div>
+
                           <button
                             onClick={toggleWakeWord}
-                            className={`p-1 px-4 py-2.5 rounded-2xl border border-white/5 flex items-center justify-between gap-3 transition-all ${isWakeWordEnabled ? 'bg-blue-400/10 text-blue-400 border-blue-400/20' : 'bg-slate-900/50 text-slate-500'
+                            className={`p-1 px-4 py-2.5 rounded-b-[1.5rem] rounded-t-sm border border-white/5 flex items-center justify-between gap-3 transition-all ${isWakeWordEnabled ? 'bg-blue-400/10 text-blue-400 border-blue-400/20' : 'bg-slate-900/50 text-slate-500'
                               }`}
                             title={uiStrings.wakeTooltip}
                           >
@@ -740,6 +1111,14 @@ export default function Home() {
                 </div>
 
                 <div className="relative rounded-xl overflow-hidden bg-slate-900/20 backdrop-blur-md flex flex-col h-[65vh] md:h-[75vh] lg:h-auto lg:flex-1 min-h-[300px] border border-white/5 shadow-xl">
+                  {/* Scroll Progress Indicator */}
+                  <div className="absolute top-0 right-0 w-[2px] h-full bg-white/[0.02] z-50 pointer-events-none">
+                    <motion.div 
+                      className="w-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
+                      style={{ height: `${chatScrollProgress}%` }}
+                    />
+                  </div>
+
                   <div
                     ref={scrollRef}
                     onScroll={handleChatScroll}
@@ -753,91 +1132,65 @@ export default function Home() {
                       </div>
                     )}
                     <AnimatePresence mode="popLayout">
-                      {messages.map((msg, index) => {
-                        const isAssistant = msg.role === 'assistant';
-                        const isFirst = isAssistant && (index === 0 || messages[index - 1].role !== 'assistant');
-                        const isLast = isAssistant && (index === messages.length - 1 || messages[index + 1].role !== 'assistant');
-                        const isStandalone = isAssistant && isFirst && isLast;
+                      {groupMessagesByDate(messages).map((group) => (
+                        <div key={group.label} className="flex flex-col gap-4 mb-4">
+                          {/* Date Separator */}
+                          <div className="flex items-center gap-4 px-4 my-2">
+                            <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.3em] bg-white/[0.03] px-3 py-1 rounded-full border border-white/5 backdrop-blur-md">
+                              {group.label}
+                            </span>
+                            <div className="h-[1px] flex-1 bg-gradient-to-r from-white/10 via-white/10 to-transparent" />
+                          </div>
 
-                        return (
-                          <motion.div
-                            key={msg.id}
-                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                          >
-                            {msg.role === 'user' ? (
-                              <div className="bg-emerald-400 text-slate-900 py-2 px-4 rounded-2xl rounded-tr-none shadow-xl shadow-emerald-400/10 max-w-[85%] flex flex-col items-end">
-                                <div className="w-full text-left">
-                                  <p className="text-[9px] uppercase font-bold opacity-50 mb-0.5 tracking-widest">
-                                    <span>{uiStrings.youName}</span>
-                                  </p>
-                                  <p className="text-sm font-bold leading-snug whitespace-pre-wrap break-words">
-                                    {msg.content}
-                                  </p>
-                                </div>
-                                <span className="text-[8px] font-bold opacity-40 uppercase pt-1 -mb-1">
-                                  {formatTime(msg.timestamp)}
-                                </span>
-                              </div>
-                            ) : (
-                              <div className={`flex items-start gap-1 ${!isFirst ? '-mt-[11px]' : 'mt-4'}`}>
-                                <div className={`scale-[0.45] ml-0 origin-top-left shrink-0 w-8 ${!isFirst ? 'invisible h-[10px]' : '-mt-1'}`}>
-                                  <ViloAvatar state={msg.avatarState || 'idle'} />
-                                </div>
-                                <div className={`glass py-2 px-3 border shadow-xl flex flex-col ${isStandalone ? 'w-fit max-w-[80%] sm:max-w-[80%] rounded-2xl rounded-tl-none' :
-                                  isFirst ? 'w-full max-w-[75%] sm:max-w-[288px] rounded-tr-2xl rounded-tl-none' :
-                                    isLast ? 'w-full max-w-[75%] sm:max-w-[288px] rounded-br-2xl rounded-bl-2xl rounded-tr-none rounded-tl-none' :
-                                      'w-full max-w-[75%] sm:max-w-[288px] rounded-none rounded-tr-none rounded-tl-none'
-                                  } ${msg.isSystem ? 'border-white/5 shadow-white/5 opacity-70 bg-slate-900/40' : 'border-emerald-400/10 shadow-emerald-500/5'}`}>
-                                  <div className="flex-1 min-w-0 pr-1 mt-0 flex flex-col">
-                                    {isFirst && (
-                                      <p className={`text-[9px] mb-0.5 uppercase tracking-widest font-extrabold flex justify-between items-center ${msg.isSystem ? 'text-slate-500' : 'text-emerald-400 opacity-90'}`}>
-                                        ViLo AI
-                                      </p>
-                                    )}
-                                    <p className={`whitespace-pre-wrap break-words ${msg.isSystem ? 'text-xs text-slate-400 italic leading-relaxed' : 'text-sm text-slate-200 leading-relaxed font-medium'}`}>
-                                      {msg.content}
-                                    </p>
-                                    <div className="flex justify-between items-end gap-2 pt-1 -mb-1">
-                                      <div className="flex items-center gap-2">
-                                        {(msg.audioBase64 || msg.isFallback) && (
-                                          <button
-                                            onClick={() => {
-                                              if (msg.audioBase64) playAudioFromBase64(msg.audioBase64);
-                                              else {
-                                                const utterance = new SpeechSynthesisUtterance(msg.content);
-                                                utterance.lang = language === 'su' ? 'id-ID' : (language === 'en' ? 'en-US' : 'id-ID');
-                                                window.speechSynthesis.speak(utterance);
-                                              }
-                                            }}
-                                            className="text-[10px] text-emerald-400/60 hover:text-emerald-400 transition-colors flex items-center gap-1 font-bold uppercase tracking-tighter"
-                                          >
-                                            <Volume2 className="w-3 h-3" />
-                                            Replay
-                                          </button>
-                                        )}
-                                        {msg.isFallback && (
-                                          <span className="text-[8px] bg-slate-800 text-slate-500 px-1 rounded font-bold uppercase tracking-tighter border border-white/5">
-                                            Eco Mode
-                                          </span>
-                                        ) || msg.audioBase64 && (
-                                          <span className="text-[8px] bg-emerald-400/10 text-emerald-400/40 px-1 rounded font-bold uppercase tracking-tighter border border-emerald-400/5">
-                                            High Quality
-                                          </span>
-                                        )}
-                                      </div>
-                                      <span className={`text-[8px] font-bold text-slate-500 uppercase ${msg.isSystem ? 'opacity-50' : ''}`}>
-                                        {formatTime(msg.timestamp)}
-                                      </span>
-                                    </div>
+                          <div className="flex flex-col gap-3">
+                            {(() => {
+                              const roleGroups: Message[][] = [];
+                              let currentGroup: Message[] = [];
+                              
+                              group.messages.forEach((msg, idx) => {
+                                if (idx > 0 && msg.role !== group.messages[idx - 1].role) {
+                                  roleGroups.push(currentGroup);
+                                  currentGroup = [msg];
+                                } else {
+                                  currentGroup.push(msg);
+                                }
+                              });
+                              if (currentGroup.length > 0) roleGroups.push(currentGroup);
+
+                              return roleGroups.map((roleGroup, rgIdx) => {
+                                const isAiGroup = roleGroup[0].role === 'assistant';
+                                return (
+                                  <div key={rgIdx} className={`flex flex-col ${isAiGroup ? 'w-fit max-w-[85%] sm:max-w-[320px] items-start' : 'w-full items-end'}`}>
+                                    {roleGroup.map((msg) => {
+                                      const globalIndex = group.messages.indexOf(msg);
+                                      const isFirst = globalIndex === 0 || group.messages[globalIndex - 1].role !== msg.role;
+                                      const isLast = globalIndex === group.messages.length - 1 || group.messages[globalIndex + 1].role !== msg.role;
+                                      const isStandalone = isFirst && isLast;
+
+                                      return (
+                                        <ChatMessage
+                                          key={msg.id}
+                                          msg={msg}
+                                          isFirst={isFirst}
+                                          isLast={isLast}
+                                          isStandalone={isStandalone}
+                                          language={language}
+                                          formatTime={formatTime}
+                                          youName={uiStrings.youName}
+                                          feedbackSubject={uiStrings.feedbackSubject}
+                                          feedbackBody={uiStrings.feedbackBody}
+                                          onReplay={handleReplay}
+                                        />
+                                      );
+                                    })}
                                   </div>
-                                </div>
-                              </div>
-                            )}
-                          </motion.div>
-                        );
-                      })}
+                                );
+                              });
+                            })()}
+                          </div>
+                        </div>
+                      ))}
 
                       {(isTyping || (isListening && !isWakeWordMode)) && (
                         <motion.div
@@ -911,23 +1264,7 @@ export default function Home() {
                           className="w-full bg-transparent p-3 md:p-4 pr-12 md:pr-14 text-sm md:text-base mt-1 min-h-[56px] max-h-[120px] overflow-y-auto custom-scrollbar flex items-center flex-wrap"
                           id="listening-display"
                         >
-                          <span className="text-white font-medium">{transcript}</span>
-                          {interimTranscript && (
-                            <motion.span
-                              animate={{ opacity: [0.4, 0.7, 0.4] }}
-                              transition={{ repeat: Infinity, duration: 1.5 }}
-                              className="text-white ml-1 italic"
-                            >
-                              {interimTranscript}
-                            </motion.span>
-                          )}
-                          <motion.span
-                            animate={{ opacity: [1, 0, 1] }}
-                            transition={{ repeat: Infinity, duration: 0.8 }}
-                            className="inline text-emerald-400 font-bold ml-1"
-                          >
-                            _
-                          </motion.span>
+                          {renderSTTContent()}
                         </div>
                       ) : (
                         <textarea
@@ -1106,14 +1443,14 @@ export default function Home() {
             )}
 
             <div className="mt-2 text-left w-full relative">
-              <ItemList items={filteredItems} onDelete={deleteItem} language={language} />
+              <ItemList items={filteredItems} onDelete={deleteItem} language={language} searchQuery={searchQuery} />
             </div>
           </div>
         </div>
 
         {/* Footer Decoration */}
         <div className="mt-8 md:mt-12 text-center opacity-40 text-[10px] tracking-widest uppercase font-bold text-slate-500 pb-6 w-full col-span-1 lg:col-span-12">
-          <div className="mb-2">VibeLocator v2.5 (0345e5d) • {uiStrings.footerThanks}</div>
+          <div className="mb-2">VibeLocator v2.7 (aaecb4b) • {uiStrings.footerThanks}</div>
           <a
             href="https://linkedin.com/in/nandangduryat"
             target="_blank"
