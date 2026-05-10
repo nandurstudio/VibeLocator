@@ -1,0 +1,6 @@
+{
+  "name": "VibeLocator",
+  "description": "Smart household object tracker with voice and AI mascot named ViLo.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": []
+}
