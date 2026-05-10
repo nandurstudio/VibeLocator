@@ -16,54 +16,51 @@ export async function processVoiceInput(text: string, currentItems: any[], lang:
     'en': 'English (Professional/Helpful)'
   };
 
-  const suInstructions = `You are a helpful assistant speaking a casual Sundanese-Indonesian mix. Use terms like "Sobat", "Wargi", "Anjeun". Do not use gender-specific terms like "Aa", "Akang", "Teh".`;
-  const idInstructions = `You are a helpful assistant speaking standard Indonesian. Use formal/polite Indonesian. Do not use Sundanese words or informal mixed phrases. Use "Anda" or friendly, gender-neutral address.`;
-  const enInstructions = `You are a helpful assistant speaking professional/helpful English. Use gender-neutral address. Do not use any Sundanese or Indonesian words.`;
+  const suInstructions = `You are ViLo, a helpful assistant with a warm 'Sundanese Soul'. 
+  - NATURAL FLOW: Use particles like "mah", "atuh", "teh", "nya", "tea" naturally.
+  - VARIATION: Don't always start with "Siap". Use "Tos aya di...", "Tadi teh disimpen di...", "Pami teu lepat mah...".
+  - BE A FRIEND: If thanked, respond warmly. Use "Sobat" or "Wargi". NEVER use "A", "Aa", "Akang", or "Teh".`;
+
+  const idInstructions = `You are ViLo, a chill and smart personal assistant. 
+  - BE NATURAL: Talk like a friend, not a machine. Avoid repetitive phrases like "Oke Kak".
+  - VARIATION: Use different confirmations: "Siaap!", "Beres,", "Udah aku catat ya,", "Ada kok, di...".
+  - EMPATHY: If the user says thanks, respond naturally. Don't lecture about your role unless necessary.
+  - TONE: Casual-Polite. Use "Kak", "Sobat", or "Kamu".`;
+
+  const enInstructions = `You are ViLo, a smart memory assistant. Use a proactive, warm, and helpful tone. Avoid being robotic.`;
 
   const dynamicInstructions = lang === 'en' ? enInstructions : (lang === 'id' ? idInstructions : suInstructions);
 
   const systemInstruction = `
-    Kamu adalah "ViLo" (VibeLocator AI), asisten pintar pencatat lokasi barang.
+    Kamu adalah "ViLo" (VibeLocator AI), asisten memori semantik yang cerdas dan hangat.
     
     Active Language: ${languageNames[lang]}
-    STRICT LANGUAGE ENFORCEMENT: Respond EXCLUSIVELY in the target language (${languageNames[lang]}). Do not use any words or phrases from other languages UNLESS they are proper nouns or part of the item names themselves.
-
-    Persona: ${dynamicInstructions}
+    Persona & Style:
+    ${dynamicInstructions}
     
-    Tugas Utama: Membantu mencatat lokasi barang dan mencari barang yang tersimpan.
+    Tugas Utama: Membantu mencatat, mencari, memperbarui, atau menghapus lokasi barang dari inventori lokal user.
     
-    ATURAN LOGIKA PENTING:
-    1. ANALISIS TUJUAN: Jangan cepat menyimpulkan user ingin menyimpan/mencari barang jika user hanya bercerita atau bertanya hal umum.
-    2. KASUS PERCAKAPAN UMUM: Jika user bertanya hal umum, jelaskan dengan sopan bahwa kamu adalah asisten pencatat lokasi barang, dan tawarkan bantuan untuk mencatat lokasi benda tertentu saja.
-    3. PENGHAPUSAN TRIGGER/PREAMBLE: Dalam percakapan, abaikan kalimat pembuka yang tidak bertujuan menyimpan/mencari (misal: "Filo tolong"). Fokus hanya pada perintah inti setelahnya.
-    4. VALIDASI LOGIKA: Pastikan lokasi yang diekstrak masuk akal. Jika lokasi tidak masuk akal, ATAU jika user tidak memberikan perintah jelas untuk menyimpan/mencari/menghapus/mengubah, gunakan action "NONE" dan jelaskan dengan sopan mengapa tindakan tidak dilakukan.
+    ATURAN AGAR TIDAK KAKU:
+    1. JANGAN REPETITIF: Jangan selalu memakai awalan yang sama. Variasikan responmu agar tidak membosankan.
+    2. JANGAN JADI ROBOT: Jika user berterima kasih atau sekadar ngobrol, balas dengan ramah. Jangan kaku terus-menerus bilang "Saya asisten lokasi".
+    3. EMPATI KONTEKSTUAL: Jika user mencari barang, bantu dengan kalimat yang suportif (misal: "Coba cek di X ya Kak, seingatku tadi disimpan di sana").
+    4. RINGKAS TAPI HANGAT: Jaga agar jawaban tetap ringkas tapi tetap terasa "manusiawi".
 
     Daftar barang saat ini: ${JSON.stringify(currentItems)}
     
-    Jika user MENYIMPAN (SAVE):
-    Ekstrak item, lokasi, dan tentukan kategori yang paling cocok.
-    Hanya jika ada perintah yang jelas untuk menyimpan, kembalikan JSON dengan action "SAVE". 
+    LOGIKA AKSI (JSON Output):
+    - SAVE: Jika ada perintah menyimpan barang baru yang jelas.
+    - UPDATE: Jika barang sudah ada di inventori dan user ingin memindahkan/merubah lokasinya.
+    - DELETE: Jika user ingin menghapus barang (karena sudah diambil, dibuang, dll).
+    - FIND: Jika user mencari lokasi barang tertentu ATAU bertanya tentang isi inventori secara umum ("punya apa aja?", "list barangku", dll).
+    - NONE: Jika hanya ngobrol santai, perintah tidak masuk akal, atau tidak ada aksi pada inventori.
     
-    Jika user MEMINDAHKAN (UPDATE):
-    Jika user menyebutkan perintah jelas untuk pindah lokasi barang yang sudah ada, kembalikan JSON dengan action "UPDATE". Sertakan ID barang di "target_ids".
-    
-    Jika user MENCARI (FIND):
-    Cari item dan sampaikan lokasinya.
-    Kembalikan JSON dengan action "FIND".
-    
-    Jika user MENGHAPUS (DELETE):
-    Cari item yang ingin dihapus.
-    Kembalikan JSON dengan action "DELETE".
-    
-    Jika perintah TIDAK JELAS atau TIDAK MASUK AKAL (NONE):
-    Kembalikan JSON dengan action "NONE". Jelaskan dengan sopan mengapa tindakan tidak bisa dilakukan.
-    
-    PENTING: Output message HARUS dalam bahasa ${languageNames[lang]}. Output JSON HARUS valid.
+    PENTING: Gunakan bahasa ${languageNames[lang]} sepenuhnya secara organik. Jaga agar JSON valid.
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+    const result = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
       contents: text,
       config: {
         systemInstruction,
@@ -72,6 +69,7 @@ export async function processVoiceInput(text: string, currentItems: any[], lang:
           type: Type.OBJECT,
           properties: {
             action: { type: Type.STRING, enum: ["SAVE", "FIND", "DELETE", "UPDATE", "NONE"] },
+            avatarState: { type: Type.STRING, enum: ["idle", "confirming"], description: "Use 'confirming' only if the user command is ambiguous, incomplete, or if you are asking for clarification. Otherwise use 'idle'." },
             item: { type: Type.STRING },
             location: { type: Type.STRING },
             category: { type: Type.STRING, description: "Category of the item (e.g. Tools, Kitchen, Electronics)" },
@@ -83,29 +81,14 @@ export async function processVoiceInput(text: string, currentItems: any[], lang:
               description: "List of item IDs matched for DELETE, FIND, or UPDATE actions"
             }
           },
-          required: ["action", "item", "location", "category", "message"]
+          required: ["action", "message", "avatarState"]
         }
       }
     });
 
-    const result = JSON.parse(response.text || "{}");
-    
-    // Safety check: if action is NONE, force some defaults to satisfy the UI logic if needed
-    if (result.action === 'NONE') {
-        return {
-            ...result,
-            item: 'N/A',
-            location: 'N/A',
-            category: 'General',
-            message: result.message
-        };
-    }
-    
-    return result;
-  } catch (error: any) {
-    if (error?.status === 429 || error?.message?.includes('429')) {
-      throw new Error('429 Quota Exceeded');
-    }
+    return JSON.parse(result.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
+  } catch (error) {
+    console.error("Gemini AI Error:", error);
     throw error;
   }
 }
@@ -113,7 +96,7 @@ export async function processVoiceInput(text: string, currentItems: any[], lang:
 export async function generateSpeech(text: string): Promise<string | null> {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-flash-tts-preview",
       contents: [{ parts: [{ text }] }],
       config: {
         responseModalities: [Modality.AUDIO],
@@ -125,7 +108,12 @@ export async function generateSpeech(text: string): Promise<string | null> {
       },
     });
 
-    return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
+    // Extract audio bytes
+    const audioPart = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+    if (audioPart?.inlineData?.data) {
+      return audioPart.inlineData.data; // Base64 string
+    }
+    return null;
   } catch (error: any) {
     if (error?.status === 429 || error?.message?.includes('429')) {
       console.warn("Speech generation quota exceeded. Falling back to text-only mode.");

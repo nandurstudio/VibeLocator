@@ -1,5 +1,6 @@
-export type Action = 'SAVE' | 'FIND' | 'DELETE' | 'UPDATE';
+export type Action = 'SAVE' | 'FIND' | 'DELETE' | 'UPDATE' | 'NONE';
 export type Language = 'su' | 'id' | 'en';
+export type AvatarState = 'idle' | 'listening' | 'processing' | 'confirming' | 'error';
 
 export interface Message {
   id: string;
@@ -7,7 +8,11 @@ export interface Message {
   content: string;
   timestamp: number;
   isSystem?: boolean;
+  avatarState?: AvatarState;
+  audioBase64?: string; // Cache for Gemini Speech
+  isFallback?: boolean; // True if using Browser TTS fallback
 }
+
 
 export interface Item {
   id: string;
@@ -19,6 +24,7 @@ export interface Item {
 
 export interface AIResponse {
   action: Action;
+  avatarState: AvatarState;
   item: string;
   location: string;
   category: string;

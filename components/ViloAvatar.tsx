@@ -23,8 +23,8 @@ export function ViloAvatar({ state }: ViloAvatarProps) {
     headControls.start({
       ...floatingAnims[state],
       transition: { 
-        repeat: Infinity, 
-        duration: state === 'error' ? 0.25 : (state === 'processing' ? 0.8 : 4), 
+        repeat: state === 'error' ? 0 : Infinity,
+        duration: state === 'error' ? 0.4 : (state === 'processing' ? 0.8 : 4), 
         ease: "easeInOut" 
       }
     });

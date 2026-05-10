@@ -5,8 +5,8 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'VibeLocator',
-  description: 'Smart household object tracker with voice and AI memory.',
+  title: 'ViLo (VibeLocator) — Your Smart Semantic Memory Assistant',
+  description: 'AI-powered household object tracker using Gemini Multimodal AI. Remembers your item locations with natural voice interaction in Sundanese, Indonesian, and English.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -7,8 +7,14 @@ export function useItems() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setItems(() => {
-      const saved = localStorage.getItem('vibelocator_items');
-      return saved ? JSON.parse(saved) : [];
+      try {
+        const saved = localStorage.getItem('vibelocator_items');
+        return saved ? JSON.parse(saved) : [];
+      } catch {
+        // Corrupted data — reset gracefully
+        localStorage.removeItem('vibelocator_items');
+        return [];
+      }
     });
   }, []);
 
@@ -20,11 +26,14 @@ export function useItems() {
       );
       if (isDuplicate) return prev;
 
+      // Cap at 200 items to protect localStorage quota and AI prompt size
+      if (prev.length >= 200) return prev;
+
       const newItem: Item = {
         id: crypto.randomUUID(),
-        name,
-        location,
-        category,
+        name: name.slice(0, 100),         // Sanitize field lengths
+        location: location.slice(0, 100),
+        category: (category || 'Lainnya').slice(0, 50),
         timestamp: Date.now(),
       };
       const updated = [newItem, ...prev];

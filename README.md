@@ -1,20 +1,61 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+<img width="1200" height="475" alt="ViLo Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+
+# 📍 ViLo (VibeLocator)
+### *Semantic Memory Unit for Smart Item Tracking*
+
+[![Next.js](https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
+[![Gemini](https://img.shields.io/badge/Gemini-2.0_Flash-blue?style=for-the-badge&logo=google-gemini)](https://deepmind.google/technologies/gemini/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
+
 </div>
 
-# Run and deploy your AI Studio app
+---
 
-This contains everything you need to run your app locally.
+## 🌟 Overview
+**ViLo** is a sophisticated personal assistant designed to solve the age-old problem of "losing things." By combining the power of **Gemini 2.0/2.5 Flash** with a rich, responsive interface, ViLo tracks your items' locations through natural speech and text.
 
-View your app in AI Studio: https://ai.studio/apps/02febc2b-b7df-4283-89e7-26f41445833d
+Built specifically with a **Sundanese-Indonesian** soul, ViLo provides a warm, local experience while maintaining world-class AI performance.
 
-## Run Locally
+## ✨ Key Features
+- **🎙️ Speech-to-Speech Interaction**: Fully voice-enabled experience using Gemini Multimodal capabilities.
+- **🤖 Agentic UI Avatar**: An AI-driven avatar that expresses moods (idle, confirming, error) based on context.
+- **🌍 Trilingual Support**: Seamless switching between **Sundanese**, **Indonesian**, and **English**.
+- **🛡️ Smart Fallback System**: Automatic failover to Browser TTS (Eco Mode) if AI quota is reached.
+- **⚡ High-Performance Caching**: Audio responses are cached locally to save tokens and improve latency.
+- **🔒 Local-First Privacy**: All item records are stored securely in your browser's local storage.
 
-**Prerequisites:**  Node.js
+## 🛠️ Tech Stack
+- **Framework**: Next.js 15 (App Router)
+- **AI Brain**: Google Gemini 2.0 Flash
+- **Voice Engine**: Gemini 2.5 Flash (Audio) + Web Speech API
+- **Animations**: Framer Motion
+- **Styling**: Tailwind CSS + Glassmorphism Design System
 
+## 🚀 Getting Started
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### Prerequisites
+- Node.js 18+
+- Gemini API Key ([Get it here](https://aistudio.google.com/))
+
+### Installation
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/nandurstudio/VibeLocator.git
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Setup environment variables:
+   Create a `.env.local` file and add:
+   ```env
+   NEXT_PUBLIC_GEMINI_API_KEY=your_api_key_here
+   ```
+4. Run the development server:
+   ```bash
+   npm run dev
+   ```
+
+## 📜 License
+©2026 - **Nandur Studio**. Built with ❤️ for JuaraVibe Coding Competition.
