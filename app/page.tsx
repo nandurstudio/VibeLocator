@@ -1113,7 +1113,7 @@ export default function Home() {
 
         {/* Footer Decoration */}
         <div className="mt-8 md:mt-12 text-center opacity-40 text-[10px] tracking-widest uppercase font-bold text-slate-500 pb-6 w-full col-span-1 lg:col-span-12">
-          <div className="mb-2">VibeLocator v2.5 (Pro Edition) • {uiStrings.footerThanks}</div>
+          <div className="mb-2">VibeLocator v2.5 (0345e5d) • {uiStrings.footerThanks}</div>
           <a
             href="https://linkedin.com/in/nandangduryat"
             target="_blank"
