@@ -68,11 +68,11 @@ export default function Home() {
         su: ["Nuju mikir...", "Nyiar lokasi...", "Nuju ngaprosés...", "Nyiar dina database...", "Nganalisa..."]
       };
       const langMsgs = messages[language] || messages.en;
+      setTimeout(() => setCurrentThinkingMessage(langMsgs[0]), 0);
       const interval = setInterval(() => {
         const randomMsg = langMsgs[Math.floor(Math.random() * langMsgs.length)];
         setCurrentThinkingMessage(randomMsg);
       }, 1500);
-      setCurrentThinkingMessage(langMsgs[0]);
       return () => clearInterval(interval);
     }
   }, [processingStatus, language]);
@@ -348,7 +348,7 @@ export default function Home() {
       if (processingStatus !== 'error') setProcessingStatus('idle');
       setTranscript('');
     }
-  }, [items, processingStatus, saveItem, deleteItem, findItems, setTranscript, language, manualText, messages, voiceEnabled]);
+  }, [items, processingStatus, saveItem, deleteItem, updateItem, findItems, setTranscript, language, manualText, messages, voiceEnabled]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -496,10 +496,12 @@ export default function Home() {
             </motion.p>
          </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-stretch">
         
         {/* Left Column: Interaction */}
-        <div className="lg:col-span-5 flex flex-col gap-2 w-full z-10">
+        <div className="lg:col-span-5 w-full z-10 relative">
+          {/* Wrapper for sticky positioning on desktop layout */}
+          <div className="flex flex-col gap-2 lg:sticky lg:top-24 lg:h-[calc(100vh-120px)]">
           {/* Header & Settings */}
           <div className="flex flex-col gap-1 relative">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 w-full">
@@ -517,7 +519,7 @@ export default function Home() {
                       onClick={() => handleLanguageChange('id')}
                       className={`px-3 py-1.5 flex-1 md:flex-none rounded-xl text-[10px] sm:text-xs font-bold transition-all shrink-0 ${language === 'id' ? 'bg-emerald-400 text-slate-900' : 'text-slate-400 hover:text-slate-200'}`}
                     >
-                      Indo
+                      Indonesia
                     </button>
                     <button 
                       onClick={() => handleLanguageChange('en')}
@@ -614,8 +616,8 @@ export default function Home() {
           </div>
 
           {/* Conversation Thread */}
-          <div className="flex flex-col gap-2 w-full">
-            <div className="flex justify-between items-center px-1">
+          <div className="flex flex-col gap-2 w-full lg:flex-1 min-h-0">
+            <div className="flex justify-between items-center px-1 shrink-0">
                <h3 className="text-slate-500 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
                 <History className="w-3 h-3" />
                 {uiStrings.historyTitle}
@@ -644,7 +646,7 @@ export default function Home() {
               )}
             </div>
 
-            <div className="relative rounded-xl overflow-hidden bg-slate-900/20 backdrop-blur-md flex flex-col h-[65vh] md:h-[75vh]">
+            <div className="relative rounded-xl overflow-hidden bg-slate-900/20 backdrop-blur-md flex flex-col h-[65vh] md:h-[75vh] lg:h-auto lg:flex-1 min-h-[300px] border border-white/5 shadow-xl">
               <div 
                 ref={scrollRef}
                 onScroll={handleChatScroll}
@@ -879,24 +881,23 @@ export default function Home() {
         </div>
       </div>
 
-
+        {/* Action Center Mic (Desktop) */}
+        <div className="hidden lg:flex w-full mt-2 mb-2 justify-center shrink-0">
+          <MicButton 
+            isListening={isListening && !isWakeWordMode} 
+            onStart={() => {
+              if (isWakeWordMode) stopListening();
+              startListening(getSTTLanguageCode(language));
+            }} 
+            onStop={stopListening}
+            isLoading={processingStatus === 'processing'}
+            language={language}
+            isStandby={isWakeWordMode}
+          />
+        </div>
+      </div>
       </div>
 
-      {/* Action Center Mic (Desktop) */}
-      <div className="hidden lg:block w-full max-w-lg mx-auto flex items-center justify-center mb-6">
-        <MicButton 
-          isListening={isListening && !isWakeWordMode} 
-          onStart={() => {
-            if (isWakeWordMode) stopListening();
-            startListening(getSTTLanguageCode(language));
-          }} 
-          onStop={stopListening}
-          isLoading={processingStatus === 'processing'}
-          language={language}
-          isStandby={isWakeWordMode}
-        />
-      </div>
-      
       {/* Mobile Sticky Mic Button */}
       <div className="lg:hidden sticky bottom-4 z-40 pointer-events-none flex flex-col items-center justify-center w-full mb-2 gap-1">
         <div className="pointer-events-auto flex items-center justify-center shrink-0">
