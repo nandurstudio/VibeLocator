@@ -13,11 +13,11 @@ interface ItemCardProps {
 
 const HighlightedText = ({ text, query }: { text: string; query?: string }) => {
   if (!query || !query.trim()) return <>{text}</>;
-  
+
   const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
   return (
     <>
-      {parts.map((part, i) => 
+      {parts.map((part, i) =>
         part.toLowerCase() === query.toLowerCase() ? (
           <span key={i} className="text-emerald-400 bg-emerald-400/20 px-0.5 rounded shadow-[0_0_8px_rgba(52,211,153,0.3)] font-bold">
             {part}
@@ -63,21 +63,21 @@ export const ItemCard = memo(function ItemCard({ item, onDelete, language, searc
   const getLocalizedCategory = (category: string) => {
     if (!category) return language === 'en' ? 'Other' : (language === 'id' ? 'Lainnya' : 'Lain-lain');
     const cat = category.toLowerCase();
-    
-    if (cat.includes('gadget') || cat.includes('smartphone') || cat.includes('hp')) 
-         return language === 'en' ? 'Gadget' : (language === 'id' ? 'Gadget' : 'Gadget');
-    if (cat.includes('key') || cat.includes('kunci')) 
-         return language === 'en' ? 'Key' : (language === 'id' ? 'Kunci' : 'Konci');
-    if (cat.includes('car') || cat.includes('motor') || cat.includes('kendaraan')) 
-         return language === 'en' ? 'Vehicle' : (language === 'id' ? 'Kendaraan' : 'Kandaraan');
-    if (cat.includes('home') || cat.includes('rumah')) 
-         return language === 'en' ? 'Home' : (language === 'id' ? 'Rumah' : 'Imah');
-    if (cat.includes('bag') || cat.includes('tas') || cat.includes('belanja')) 
-         return language === 'en' ? 'Bag' : (language === 'id' ? 'Tas' : 'Tas');
-    if (cat.includes('book') || cat.includes('buku')) 
-         return language === 'en' ? 'Book' : (language === 'id' ? 'Buku' : 'Buku');
-    if (cat.includes('food') || cat.includes('makanan') || cat.includes('utensils')) 
-         return language === 'en' ? 'Food' : (language === 'id' ? 'Makanan' : 'Kadaharan');
+
+    if (cat.includes('gadget') || cat.includes('smartphone') || cat.includes('hp'))
+      return language === 'en' ? 'Gadget' : (language === 'id' ? 'Gadget' : 'Gadget');
+    if (cat.includes('key') || cat.includes('kunci'))
+      return language === 'en' ? 'Key' : (language === 'id' ? 'Kunci' : 'Konci');
+    if (cat.includes('car') || cat.includes('motor') || cat.includes('kendaraan'))
+      return language === 'en' ? 'Vehicle' : (language === 'id' ? 'Kendaraan' : 'Kandaraan');
+    if (cat.includes('home') || cat.includes('rumah'))
+      return language === 'en' ? 'Home' : (language === 'id' ? 'Rumah' : 'Imah');
+    if (cat.includes('bag') || cat.includes('tas') || cat.includes('belanja'))
+      return language === 'en' ? 'Bag' : (language === 'id' ? 'Tas' : 'Tas');
+    if (cat.includes('book') || cat.includes('buku'))
+      return language === 'en' ? 'Book' : (language === 'id' ? 'Buku' : 'Buku');
+    if (cat.includes('food') || cat.includes('makanan') || cat.includes('utensils'))
+      return language === 'en' ? 'Food' : (language === 'id' ? 'Makanan' : 'Kadaharan');
 
     return toTitleCase(category);
   }
@@ -143,7 +143,7 @@ export const ItemCard = memo(function ItemCard({ item, onDelete, language, searc
           {isConfirming ? (language === 'en' ? 'Sure?' : (language === 'id' ? 'Yakin?' : 'Leres?')) : <Trash2 className="w-3.5 h-3.5" />}
         </button>
       </div>
-      
+
       <div className="flex items-center gap-1.5 text-emerald-400/90 bg-emerald-400/5 p-1.5 px-2 rounded-lg border border-emerald-400/10">
         <MapPin className="w-3 h-3 shrink-0" />
         <span className="font-semibold text-xs">
@@ -156,7 +156,7 @@ export const ItemCard = memo(function ItemCard({ item, onDelete, language, searc
           <Clock className="w-2.5 h-2.5" />
           <span>{getRelativeTime(item.timestamp)}</span>
         </div>
-        <span className="opacity-40">#{item.id.slice(0,4)}</span>
+        <span className="opacity-40">#{item.id.slice(0, 4)}</span>
       </div>
     </motion.div>
   );
@@ -171,30 +171,30 @@ interface ItemListProps {
 
 export const ItemList = memo(function ItemList({ items, onDelete, language, searchQuery }: ItemListProps) {
   const emptyMessage = {
-    su: "Teu acan aya barang nu dicatet, Kang.",
+    su: "Teu acan aya barang nu dicatet, Lur.",
     id: "Belum ada barang yang dicatat nih, Kak.",
     en: "No items stored yet."
   }[language];
 
   if (items.length === 0) {
     return (
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="text-center py-16 border-2 border-dashed border-white/5 rounded-3xl bg-gradient-to-b from-white/[0.02] to-transparent relative overflow-hidden"
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex-1 min-h-full w-full flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-3xl bg-gradient-to-b from-white/[0.02] to-transparent relative overflow-hidden py-12"
       >
         {/* Subtle Background Glow */}
-        <div className="absolute inset-0 bg-emerald-400/5 blur-3xl rounded-full -z-10 translate-y-10" />
-        
-        <motion.div 
+        <div className="absolute inset-0 bg-emerald-400/5 blur-2xl rounded-full -z-10 translate-y-10 transform-gpu" />
+
+        <motion.div
           animate={{ y: [0, -10, 0] }}
           transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
           className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white/5 border border-white/10 mb-4 shadow-xl"
         >
           <Package className="w-8 h-8 text-slate-500/50" />
         </motion.div>
-        
-        <motion.p 
+
+        <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2 }}
@@ -202,8 +202,8 @@ export const ItemList = memo(function ItemList({ items, onDelete, language, sear
         >
           {language === 'en' ? 'System Ready' : (language === 'id' ? 'Sistem Siap' : 'Sistem Sayagi')}
         </motion.p>
-        
-        <motion.p 
+
+        <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 0.6 }}
           transition={{ delay: 0.4 }}

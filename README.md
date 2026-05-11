@@ -19,7 +19,7 @@ Built specifically with a **Sundanese-Indonesian** soul, ViLo provides a warm, l
 
 ## ✨ Key Features
 - **🎙️ Speech-to-Speech Interaction**: Fully voice-enabled experience using Gemini Multimodal capabilities.
-- **🤖 Agentic UI Avatar**: An AI-driven avatar that expresses moods (idle, confirming, error) based on context.
+- **🤖 Agentic UI Avatar**: AI-driven avatar that expresses moods (idle, confirming, error) based on context.
 - **🌍 Trilingual Support**: Seamless switching between **Sundanese**, **Indonesian**, and **English**.
 - **🛡️ Smart Fallback System**: Automatic failover to Browser TTS (Eco Mode) if AI quota is reached.
 - **⚡ High-Performance Caching**: Audio responses are cached locally to save tokens and improve latency.
@@ -57,6 +57,13 @@ Built specifically with a **Sundanese-Indonesian** soul, ViLo provides a warm, l
    npm run dev
    ```
 
+## 🚀 Recent Improvements (v2.8)
+- **📟 Terminal Typewriter Interaction**: Added a high-tech terminal typing effect for AI responses, complete with an adaptive speed algorithm and a persistent blinking block cursor (`█`) for a true sci-fi feel.
+- **🤖 Mini-ViLo MicButton Persona**: Replaced the static mic icon with a dynamic "Mini-ViLo" head, featuring a digital visor with emerald eyes and integrated soundwave signals.
+- **🏛️ Standby Pillar UI**: Redesigned the settings stack into a cohesive "control pillar" with synchronized dynamic border radii and a unified glassmorphism aesthetic.
+- **🧠 Context-Aware Auto-Close**: The settings menu now automatically collapses when voice interaction is triggered (via 'Hey ViLo' or manual click), providing a clutter-free focus mode.
+- **⚡ Performance & Purity Fixes**: Eliminated cascading renders in React effects and satisfied component purity rules for a smoother, error-free execution.
+
 ## 🚀 Recent Improvements (v2.7)
 - **⚡ Zero-Lag Performance**: Implemented comprehensive memoization for Chat Bubbles and Avatars, eliminating typing latency in long conversations.
 - **🔊 Audio Stability**: Added proactive `AudioContext` resuming to ensure reliable voice responses on mobile Safari and Chrome.
@@ -66,6 +73,7 @@ Built specifically with a **Sundanese-Indonesian** soul, ViLo provides a warm, l
 - **🏃 Adjustable TTS Speed**: Users can now control AI speaking rate from 0.5x to 2.0x.
 - **🩺 Rich Diagnostics**: Automated technical reporting for bugs, including localized email templates for Sundanese, Indonesian, and English.
 - **📦 Storage Awareness**: Real-time visual indicator for localStorage usage (200-item capacity).
+- **🎨 Custom Branding**: Integrated a high-tech glowing emerald favicon for a complete professional feel.
 
 ## 📜 License
 ©2026 - **Nandur Studio**. Built with ❤️ for JuaraVibe Coding Competition.

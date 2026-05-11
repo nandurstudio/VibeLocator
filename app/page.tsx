@@ -35,6 +35,55 @@ const formatUserMessage = (text: string): string => {
   return isQuestion ? `${trimmed}?` : trimmed;
 };
 
+const TerminalTypewriter = ({ text, onComplete, isNew, showCursorAlways }: { text: string, onComplete?: () => void, isNew: boolean, showCursorAlways?: boolean }) => {
+  const [displayText, setDisplayText] = useState(isNew ? '' : text);
+  const [currentIndex, setCurrentIndex] = useState(isNew ? 0 : text.length);
+  const [isSkipped, setIsSkipped] = useState(!isNew);
+
+  // Adaptive speed: faster for longer text
+  const baseSpeed = Math.max(5, 25 - Math.floor(text.length / 20));
+
+  useEffect(() => {
+    // If not new, already skipped, or finished, do nothing
+    if (!isNew || isSkipped || currentIndex >= text.length) {
+      if (isNew && !isSkipped && currentIndex >= text.length) {
+        onComplete?.();
+      }
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setDisplayText(text.substring(0, currentIndex + 1));
+      setCurrentIndex(prev => prev + 1);
+    }, baseSpeed);
+
+    return () => clearTimeout(timeout);
+  }, [currentIndex, text, baseSpeed, isNew, isSkipped, onComplete]);
+
+  const handleSkip = () => {
+    if (isSkipped) return;
+    setIsSkipped(true);
+    setDisplayText(text);
+    setCurrentIndex(text.length);
+    onComplete?.();
+  };
+
+  const showCursor = showCursorAlways || (isNew && !isSkipped && currentIndex < text.length);
+
+  return (
+    <div onClick={handleSkip} className="cursor-pointer">
+      <span>{displayText}</span>
+      {showCursor && (
+        <motion.span
+          animate={{ opacity: [1, 1, 0, 0] }}
+          transition={{ repeat: Infinity, duration: 0.8, times: [0, 0.5, 0.51, 1] }}
+          className="inline-block w-[6px] h-[15px] bg-emerald-400 ml-1 translate-y-[2px] shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+        />
+      )}
+    </div>
+  );
+};
+
 const ChatMessage = memo(({
   msg,
   isFirst,
@@ -45,7 +94,8 @@ const ChatMessage = memo(({
   youName,
   feedbackSubject,
   feedbackBody,
-  onReplay
+  onReplay,
+  isLastGlobal
 }: {
   msg: Message,
   isFirst: boolean,
@@ -56,8 +106,14 @@ const ChatMessage = memo(({
   youName: string,
   feedbackSubject: string,
   feedbackBody: string,
-  onReplay: (msg: Message) => void
+  onReplay: (msg: Message) => void,
+  isLastGlobal: boolean
 }) => {
+  // Use state initializer to capture "freshness" once on mount
+  const [isFresh] = useState(() => 
+    msg.role === 'assistant' && !msg.isSystem && (Date.now() - msg.timestamp < 5000)
+  );
+
   return (
     <motion.div
       layout="position"
@@ -95,9 +151,13 @@ const ChatMessage = memo(({
                   ViLo AI
                 </p>
               )}
-              <p className={`whitespace-pre-wrap break-words ${msg.isSystem ? 'text-xs text-slate-400 italic leading-relaxed' : 'text-sm text-slate-200 leading-relaxed font-medium'}`}>
-                {msg.content}
-              </p>
+              <div className={`whitespace-pre-wrap break-words ${msg.isSystem ? 'text-xs text-slate-400 italic leading-relaxed' : 'text-sm text-slate-200 leading-relaxed font-medium'}`}>
+                {msg.role === 'assistant' && !msg.isSystem ? (
+                  <TerminalTypewriter text={msg.content} isNew={isFresh} showCursorAlways={isLastGlobal} />
+                ) : (
+                  msg.content
+                )}
+              </div>
 
               {/* Feedback Button */}
               {msg.showFeedbackButton && (
@@ -161,7 +221,10 @@ export default function Home() {
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [chatScrollState, setChatScrollState] = useState({ top: false, bottom: false });
+  const [itemScrollState, setItemScrollState] = useState({ top: false, bottom: false });
   const [chatScrollProgress, setChatScrollProgress] = useState(0);
+  const [itemScrollProgress, setItemScrollProgress] = useState(0);
+  const [standbyProgress, setStandbyProgress] = useState(0);
   const [currentThinkingMessage, setCurrentThinkingMessage] = useState('');
   const [voiceSpeed, setVoiceSpeed] = useState(1.0);
   const [isSupported, setIsSupported] = useState(true);
@@ -310,6 +373,7 @@ export default function Home() {
 
   const lastProcessedTranscript = useRef('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const itemScrollRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line react-hooks/purity
   const lastActivityRef = useRef<number>(Date.now());
 
@@ -411,12 +475,32 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [isWakeWordEnabled, language, messages, standbyTimeout, stopListening, saveMessages]);
 
+  // Real-time standby progress for radial UI
+  useEffect(() => {
+    if (!isWakeWordEnabled) return;
+
+    const updateProgress = () => {
+      const totalMs = standbyTimeout * 60 * 1000;
+      const elapsedMs = Date.now() - lastActivityRef.current;
+      const remaining = Math.max(0, 1 - (elapsedMs / totalMs));
+      setStandbyProgress(remaining);
+    };
+
+    updateProgress();
+    const interval = setInterval(updateProgress, 100); // Smooth updates every 100ms
+    return () => {
+      clearInterval(interval);
+      setStandbyProgress(0);
+    };
+  }, [isWakeWordEnabled, standbyTimeout]);
+
   useEffect(() => {
     // If wake word is enabled and we are not doing anything, start wake word listening
     if (isWakeWordEnabled && !isListening && processingStatus !== 'processing' && !isTyping) {
       const timer = setTimeout(() => {
         startListening(getSTTLanguageCode(language), true, () => {
           setIsWakingUp(true);
+          setIsSettingsExpanded(false); // Close menu on wake!
           lastActivityRef.current = Date.now(); // Reset standby timer immediately on wake!
           setTimeout(() => setIsWakingUp(false), 1000);
           // Wake word detected! Faster transition to avoid cutting off the command
@@ -509,6 +593,18 @@ export default function Home() {
     const totalScrollable = scrollHeight - clientHeight;
     const progress = totalScrollable > 0 ? (scrollTop / totalScrollable) * 100 : 0;
     setChatScrollProgress(progress);
+  }, []);
+
+  const handleItemScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    setItemScrollState({
+      top: scrollTop > 0,
+      bottom: Math.ceil(scrollTop + clientHeight) < scrollHeight
+    });
+    
+    const totalScrollable = scrollHeight - clientHeight;
+    const progress = totalScrollable > 0 ? (scrollTop / totalScrollable) * 100 : 0;
+    setItemScrollProgress(progress);
   }, []);
 
   const handleLanguageChange = (lang: Language) => {
@@ -737,7 +833,7 @@ export default function Home() {
       placeholder: "Milari naon yeuh?",
       listTitle: "Barang nu tos disimpen",
       empty: "Kosong keneh yeuh. Pencet Mic geura!",
-      historyEmpty: "Teu acan aya obrolan, Sobat.",
+      historyEmpty: "Teu acan aya obrolan, Lur.",
       clearItems: "Hapus Sadaya Barang",
       clearHistory: "Bersihkeun Obrolan",
       historyTitle: "Catetan Obrolan",
@@ -857,7 +953,8 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-[90px] pb-6 md:pb-10 relative w-full">
+      {/* Main Container */}
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-[90px] pb-6 md:pb-10 relative w-full z-10 transform-gpu">
 
         {/* SMU + Tagline */}
         <div className="flex flex-col gap-2 mb-4">
@@ -955,42 +1052,54 @@ export default function Home() {
                             </div>
                           </button>
 
-                          <button
-                            onClick={toggleHq}
-                            className={`p-1 px-4 py-2.5 rounded-sm border border-white/5 flex items-center justify-between gap-3 transition-all ${isHqEnabled ? 'bg-amber-400/10 text-amber-400 border-amber-400/20' : 'bg-slate-900/50 text-slate-500'
-                              }`}
-                            title={uiStrings.hqToggle}
-                          >
-                            <div className="flex items-center gap-2">
-                              <Mic className="w-4 h-4 shrink-0" />
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-left">
-                                {uiStrings.hqToggle}
-                              </span>
-                            </div>
-                            <div className={`w-8 h-4 rounded-full relative transition-all shrink-0 ${isHqEnabled ? 'bg-amber-400/30' : 'bg-slate-800'}`}>
-                              <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${isHqEnabled ? 'right-0.5 bg-amber-400' : 'left-0.5 bg-slate-600'}`} />
-                            </div>
-                          </button>
+                          <AnimatePresence>
+                            {voiceEnabled && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.4, ease: "easeInOut" }}
+                                className="flex flex-col gap-1 overflow-hidden"
+                              >
+                                <button
+                                  onClick={toggleHq}
+                                  className={`p-1 px-4 py-2.5 rounded-sm border border-white/5 flex items-center justify-between gap-3 transition-all ${isHqEnabled ? 'bg-amber-400/10 text-amber-400 border-amber-400/20' : 'bg-slate-900/50 text-slate-500 hover:bg-white/5'
+                                    }`}
+                                  title={uiStrings.hqToggle}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Mic className="w-4 h-4 shrink-0" />
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-left">
+                                      {uiStrings.hqToggle}
+                                    </span>
+                                  </div>
+                                  <div className={`w-8 h-4 rounded-full relative transition-all shrink-0 ${isHqEnabled ? 'bg-amber-400/30' : 'bg-slate-800'}`}>
+                                    <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${isHqEnabled ? 'right-0.5 bg-amber-400' : 'left-0.5 bg-slate-600'}`} />
+                                  </div>
+                                </button>
 
-                          <div className="flex flex-col gap-3 p-3 bg-slate-900/50 rounded-sm border border-white/5">
-                            <div className="flex justify-between items-center px-1">
-                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{uiStrings.speedLabel}</span>
-                              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">{voiceSpeed.toFixed(1)}x</span>
-                            </div>
-                            <input
-                              type="range"
-                              min="0.5"
-                              max="2.0"
-                              step="0.1"
-                              value={voiceSpeed}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                setVoiceSpeed(val);
-                                localStorage.setItem('vibelocator_voice_speed', String(val));
-                              }}
-                              className="w-full accent-emerald-400 bg-slate-800 rounded-lg h-1 appearance-none cursor-pointer"
-                            />
-                          </div>
+                                <div className="flex flex-col gap-3 p-3 bg-slate-900/50 rounded-sm border border-white/5">
+                                  <div className="flex justify-between items-center px-1">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{uiStrings.speedLabel}</span>
+                                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">{voiceSpeed.toFixed(1)}x</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0.5"
+                                    max="2.0"
+                                    step="0.1"
+                                    value={voiceSpeed}
+                                    onChange={(e) => {
+                                      const val = parseFloat(e.target.value);
+                                      setVoiceSpeed(val);
+                                      localStorage.setItem('vibelocator_voice_speed', String(val));
+                                    }}
+                                    className="w-full accent-emerald-400 bg-slate-800 rounded-lg h-1 appearance-none cursor-pointer"
+                                  />
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
 
                           <div className="flex flex-col gap-2 p-3 bg-slate-900/50 rounded-sm border border-white/5">
                             <div className="flex justify-between items-center">
@@ -1028,9 +1137,16 @@ export default function Home() {
                             )}
                           </div>
 
-                          <button
+                          <motion.button
+                            layout
                             onClick={toggleWakeWord}
-                            className={`p-1 px-4 py-2.5 rounded-b-[1.5rem] rounded-t-sm border border-white/5 flex items-center justify-between gap-3 transition-all ${isWakeWordEnabled ? 'bg-blue-400/10 text-blue-400 border-blue-400/20' : 'bg-slate-900/50 text-slate-500'
+                            initial={false}
+                            animate={{ 
+                              borderBottomLeftRadius: isWakeWordEnabled ? "2px" : "24px",
+                              borderBottomRightRadius: isWakeWordEnabled ? "2px" : "24px",
+                            }}
+                            transition={{ ease: "easeInOut" }}
+                            className={`p-1 px-4 py-2.5 border border-white/5 border-t-0 flex items-center justify-between gap-3 transition-colors rounded-t-sm ${isWakeWordEnabled ? 'bg-blue-400/10 text-blue-400 border-blue-400/20' : 'bg-slate-900/50 text-slate-500'
                               }`}
                             title={uiStrings.wakeTooltip}
                           >
@@ -1043,32 +1159,35 @@ export default function Home() {
                             <div className={`w-8 h-4 rounded-full relative transition-all shrink-0 ${isWakeWordEnabled ? 'bg-blue-400/30' : 'bg-slate-800'}`}>
                               <div className={`absolute top-0.5 w-3 h-3 rounded-full transition-all ${isWakeWordEnabled ? 'right-0.5 bg-blue-400' : 'left-0.5 bg-slate-600'}`} />
                             </div>
-                          </button>
+                          </motion.button>
 
                           {isWakeWordEnabled && (
                             <motion.div
-                              initial={{ opacity: 0, y: -10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="glass rounded-xl p-2 flex items-center justify-between gap-2"
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="glass rounded-b-[1.5rem] rounded-t-sm p-2 flex flex-col gap-2 border-t-0 overflow-hidden"
                             >
-                              <span className="text-[9px] uppercase font-bold text-slate-500 ml-2">{uiStrings.standbyLabel}</span>
-                              <div className="flex gap-1 flex-wrap justify-end">
-                                {[0.5, 1, 2, 5].map((val) => (
-                                  <button
-                                    key={val}
-                                    onClick={() => {
-                                      setStandbyTimeout(val);
-                                      localStorage.setItem('vibelocator_standby_timeout', String(val));
-                                      lastActivityRef.current = Date.now();
-                                    }}
-                                    className={`px-2 md:px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${standbyTimeout === val
-                                      ? 'bg-blue-400 text-slate-900'
-                                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                                      }`}
-                                  >
-                                    {val < 1 ? '30s' : `${val}m`}
-                                  </button>
-                                ))}
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[9px] uppercase font-bold text-slate-500 ml-2">{uiStrings.standbyLabel}</span>
+                                <div className="flex gap-1 flex-nowrap justify-end overflow-x-auto no-scrollbar">
+                                  {[0.5, 1, 2, 5].map((val) => (
+                                    <button
+                                      key={val}
+                                      onClick={() => {
+                                        setStandbyTimeout(val);
+                                        localStorage.setItem('vibelocator_standby_timeout', String(val));
+                                        lastActivityRef.current = Date.now();
+                                      }}
+                                      className={`px-2 md:px-3 py-1 rounded-lg text-[10px] font-bold transition-all shrink-0 ${standbyTimeout === val
+                                        ? 'bg-blue-400 text-slate-900 shadow-lg shadow-blue-400/20'
+                                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                                        }`}
+                                    >
+                                      {val < 1 ? '30s' : `${val}m`}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
                             </motion.div>
                           )}
@@ -1181,6 +1300,7 @@ export default function Home() {
                                           feedbackSubject={uiStrings.feedbackSubject}
                                           feedbackBody={uiStrings.feedbackBody}
                                           onReplay={handleReplay}
+                                          isLastGlobal={messages[messages.length - 1]?.id === msg.id}
                                         />
                                       );
                                     })}
@@ -1348,12 +1468,14 @@ export default function Home() {
                   isListening={isListening && !isWakeWordMode}
                   onStart={() => {
                     if (isWakeWordMode) stopListening();
+                    setIsSettingsExpanded(false);
                     startListening(getSTTLanguageCode(language));
                   }}
                   onStop={stopListening}
                   isLoading={processingStatus === 'processing'}
                   language={language}
                   isStandby={isWakeWordMode}
+                  standbyProgress={standbyProgress}
                 />
               </div>
             </div>
@@ -1366,6 +1488,7 @@ export default function Home() {
                 isListening={isListening && !isWakeWordMode}
                 onStart={() => {
                   if (isWakeWordMode) stopListening();
+                  setIsSettingsExpanded(false);
                   startListening(getSTTLanguageCode(language));
                 }}
                 onStop={stopListening}
@@ -1373,6 +1496,7 @@ export default function Home() {
                 language={language}
                 compact
                 isStandby={isWakeWordMode}
+                standbyProgress={standbyProgress}
               />
             </div>
           </div>
@@ -1442,8 +1566,34 @@ export default function Home() {
               </div>
             )}
 
-            <div className="mt-2 text-left w-full relative">
-              <ItemList items={filteredItems} onDelete={deleteItem} language={language} searchQuery={searchQuery} />
+            <div className="mt-2 text-left w-full relative rounded-xl overflow-hidden bg-slate-900/20 backdrop-blur-md flex flex-col h-[65vh] md:h-[75vh] lg:h-auto lg:flex-1 min-h-[300px] border border-white/5 shadow-xl">
+              {/* Item Scroll Progress Indicator */}
+              <div className="absolute top-0 right-0 w-[2px] h-full bg-white/[0.02] z-50 pointer-events-none">
+                <motion.div 
+                  className="w-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
+                  style={{ height: `${itemScrollProgress}%` }}
+                />
+              </div>
+
+              {/* Top Gradient Shadow */}
+              <div 
+                className={`absolute top-0 left-0 right-0 h-8 pointer-events-none transition-opacity duration-300 z-20 ${itemScrollState.top ? 'opacity-100' : 'opacity-0'}`}
+                style={{ background: 'linear-gradient(rgba(52, 211, 153, 0.08), transparent)', borderTop: '1px solid rgba(52, 211, 153, 0.1)' }}
+              />
+
+              {/* Bottom Gradient Shadow */}
+              <div 
+                className={`absolute bottom-0 left-0 right-0 h-8 pointer-events-none transition-opacity duration-300 z-20 ${itemScrollState.bottom ? 'opacity-100' : 'opacity-0'}`}
+                style={{ background: 'linear-gradient(to top, rgba(52, 211, 153, 0.08), transparent)', borderBottom: '1px solid rgba(52, 211, 153, 0.1)' }}
+              />
+
+              <div
+                ref={itemScrollRef}
+                onScroll={handleItemScroll}
+                className="flex-1 flex flex-col overflow-y-auto custom-scrollbar px-2 pt-4 pb-4"
+              >
+                <ItemList items={filteredItems} onDelete={deleteItem} language={language} searchQuery={searchQuery} />
+              </div>
             </div>
           </div>
         </div>
