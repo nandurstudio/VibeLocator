@@ -181,7 +181,7 @@ export const ItemList = memo(function ItemList({ items, onDelete, language, sear
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="flex-1 min-h-full w-full flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-3xl bg-gradient-to-b from-white/[0.02] to-transparent relative overflow-hidden py-12"
+        className="flex-1 h-full w-full flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-xl bg-gradient-to-b from-white/[0.02] to-transparent relative overflow-hidden py-8"
       >
         {/* Subtle Background Glow */}
         <div className="absolute inset-0 bg-emerald-400/5 blur-2xl rounded-full -z-10 translate-y-10 transform-gpu" />
@@ -216,7 +216,7 @@ export const ItemList = memo(function ItemList({ items, onDelete, language, sear
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
       {items.map((item) => (
         <ItemCard key={item.id} item={item} onDelete={onDelete} language={language} searchQuery={searchQuery} />
       ))}

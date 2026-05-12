@@ -7,9 +7,12 @@ if (!apiKey) {
   console.warn("NEXT_PUBLIC_GEMINI_API_KEY is not defined");
 }
 
+export const GEMINI_MODEL = "gemini-2.5-flash";
+const SPEECH_MODEL = "gemini-3.1-flash-tts-preview";
+
 const ai = new GoogleGenAI({ apiKey: apiKey || "" });
 
-export async function processVoiceInput(text: string, currentItems: any[], lang: string = 'su'): Promise<AIResponse> {
+export async function processVoiceInput(text: string, currentItems: any[], lang: string = 'su', history: { role: string, content: string }[] = []): Promise<AIResponse> {
   const languageNames: Record<string, string> = {
     'su': 'Sundanese-Indonesian Mix (Casual/Polite)',
     'id': 'Indonesian (Standard/Polite)',
@@ -60,9 +63,15 @@ export async function processVoiceInput(text: string, currentItems: any[], lang:
   `;
 
   try {
+    const formattedHistory = history.map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+    }));
+    const contents = [...formattedHistory, { role: "user", parts: [{ text }] }];
+
     const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: text,
+      model: GEMINI_MODEL,
+      contents,
       config: {
         systemInstruction,
         responseMimeType: "application/json",
@@ -87,17 +96,26 @@ export async function processVoiceInput(text: string, currentItems: any[], lang:
       }
     });
 
-    return JSON.parse(result.candidates?.[0]?.content?.parts?.[0]?.text || '{}');
-  } catch (error) {
-    console.error("Gemini AI Error:", error);
-    throw error;
+    const content = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!content) throw new Error("Empty response from Gemini");
+    return JSON.parse(content);
+  } catch (err: any) {
+    // The SDK wraps the error in an object, e.g., { error: { code: 429, status: "RESOURCE_EXHAUSTED" } }
+    const errObj = err?.error || err;
+    const statusCode = errObj?.code || errObj?.status;
+    const isRateLimited = statusCode === 429 || statusCode === "RESOURCE_EXHAUSTED" || err?.message?.includes('429');
+    
+    // Throw error so page.tsx can handle with technical details and feedback button
+    throw err;
   }
 }
 
 export async function generateSpeech(text: string): Promise<string | null> {
   try {
+    if (!apiKey) return null;
+
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-tts-preview",
+      model: SPEECH_MODEL,
       contents: [{ parts: [{ text }] }],
       config: {
         responseModalities: [Modality.AUDIO],
@@ -115,11 +133,20 @@ export async function generateSpeech(text: string): Promise<string | null> {
       return audioPart.inlineData.data; // Base64 string
     }
     return null;
-  } catch (error: any) {
-    if (error?.status === 429 || error?.message?.includes('429')) {
-      console.warn("Speech generation quota exceeded. Falling back to text-only mode.");
+  } catch (err: any) {
+    const errObj = err?.error || err;
+    const statusCode = errObj?.code || errObj?.status;
+    const isRateLimited = statusCode === 429 || statusCode === "RESOURCE_EXHAUSTED" || err?.message?.includes('429');
+    const isUnsupported = statusCode === 400 || statusCode === "INVALID_ARGUMENT" || err?.message?.includes('400');
+    
+    if (isRateLimited) {
+      console.warn("[TTS] Quota exceeded or high demand. Falling back to Browser TTS.");
+    } else if (statusCode === 401) {
+      console.warn("[TTS] Invalid API Key.");
+    } else if (isUnsupported) {
+      console.warn("[TTS] Model does not support Audio output. Falling back to Browser TTS.");
     } else {
-      console.error("Speech generation failed:", error);
+      console.warn("[TTS] Speech generation failed:", errObj?.message || err?.message);
     }
     return null;
   }

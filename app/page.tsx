@@ -1,13 +1,13 @@
 'use client';
 import { useEffect, useState, useRef, useCallback, useMemo, memo } from 'react';
-import { Search, Loader2, Trash2, History, Volume2, VolumeX, Ear, EarOff, ChevronDown, Send, Mic, X, AlertTriangle } from 'lucide-react';
+import { Search, Loader2, Trash2, History, Volume2, VolumeX, Ear, EarOff, ChevronDown, Send, Mic, X, AlertTriangle, Package } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MicButton } from '@/components/MicButton';
 import { ItemList } from '@/components/ItemList';
 import { ViloAvatar } from '@/components/ViloAvatar';
 import { useItems } from '@/hooks/use-items';
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition';
-import { processVoiceInput, generateSpeech, playAudioFromBase64, resumeAudioContext } from '@/lib/gemini';
+import { processVoiceInput, generateSpeech, playAudioFromBase64, resumeAudioContext, GEMINI_MODEL } from '@/lib/gemini';
 import { Language, Message } from '@/lib/types';
 import { Languages } from 'lucide-react';
 
@@ -110,7 +110,7 @@ const ChatMessage = memo(({
   isLastGlobal: boolean
 }) => {
   // Use state initializer to capture "freshness" once on mount
-  const [isFresh] = useState(() => 
+  const [isFresh] = useState(() =>
     msg.role === 'assistant' && !msg.isSystem && (Date.now() - msg.timestamp < 5000)
   );
 
@@ -119,7 +119,7 @@ const ChatMessage = memo(({
       layout="position"
       initial={{ opacity: 0, scale: 0.95, y: 10 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      className={`flex w-full ${msg.role === 'user' ? 'justify-end mt-1' : 'justify-start'} ${isFirst ? 'mt-4' : ''}`}
+      className={`flex w-full ${msg.role === 'user' ? 'justify-end mt-0' : 'justify-start'} ${isFirst ? 'mt-0' : ''}`}
     >
       {msg.role === 'user' ? (
         <div className="bg-emerald-400 text-slate-900 py-2 px-4 rounded-2xl rounded-tr-none shadow-xl shadow-emerald-400/10 max-w-[85%] flex flex-col items-end">
@@ -136,14 +136,14 @@ const ChatMessage = memo(({
           </span>
         </div>
       ) : (
-        <div className={`flex items-start gap-1 w-full ${!isFirst ? 'mt-1' : 'mt-0'}`}>
+        <div className={`flex items-start gap-3 w-full ${!isFirst && msg.role === 'assistant' ? 'mt-1' : 'mt-0'}`}>
           <div className={`scale-[0.45] ml-0 origin-top-left shrink-0 w-8 ${!isFirst ? 'invisible h-0' : '-mt-1'}`}>
             <ViloAvatar state={msg.avatarState || 'idle'} />
           </div>
           <div className={`glass py-2 px-3 border flex flex-col w-full ${isStandalone ? 'rounded-2xl rounded-tl-none shadow-xl' :
-              isFirst ? 'rounded-tr-2xl rounded-tl-none shadow-none border-b-0' :
-                isLast ? 'rounded-br-2xl rounded-bl-2xl rounded-tr-none rounded-tl-none shadow-xl' :
-                  'rounded-none rounded-tr-none rounded-tl-none shadow-none border-b-0'
+            isFirst ? 'rounded-tr-2xl rounded-tl-none shadow-none border-b-0' :
+              isLast ? 'rounded-br-2xl rounded-bl-2xl rounded-tr-none rounded-tl-none shadow-xl' :
+                'rounded-none rounded-tr-none rounded-tl-none shadow-none border-b-0'
             } ${msg.isSystem ? 'border-white/5 opacity-70 bg-slate-900/40' : 'border-emerald-400/10'} ${(isLast || isStandalone) ? (msg.isSystem ? 'shadow-white/5' : 'shadow-emerald-500/10') : ''}`}>
             <div className="flex-1 min-w-0 pr-1 mt-0 flex flex-col">
               {isFirst && (
@@ -231,10 +231,14 @@ export default function Home() {
   const [processingStatus, setProcessingStatus] = useState<'idle' | 'processing' | 'confirming' | 'error'>('idle');
   const [isWakeWordEnabled, setIsWakeWordEnabled] = useState(false);
   const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const [standbyTimeout, setStandbyTimeout] = useState(5);
 
   const { items, saveItem, updateItem, deleteItem, clearItems, findItem, findItems } = useItems();
-  const { isListening, isWakeWordMode, transcript, interimTranscript, startListening, stopListening, setTranscript } = useSpeechRecognition();
+  const handleInputRef = useRef<any>(null);
+  const { isListening, isWakeWordMode, transcript, interimTranscript, startListening, stopListening, switchMode, setTranscript } = useSpeechRecognition({
+    onSessionEnd: (text) => handleInputRef.current?.(text)
+  });
 
   // const logEvent = useCallback((action: string, metadata: any = {}) => {
   //   // In production, this would send to an analytics service (Posthog, Mixpanel, etc.)
@@ -251,9 +255,15 @@ export default function Home() {
     }
 
     if (interimTranscript) {
+      // Deduplicate: If interim starts with transcript, only show the difference
+      let displayInterim = interimTranscript;
+      if (transcript && interimTranscript.toLowerCase().trim().startsWith(transcript.toLowerCase().trim())) {
+        displayInterim = interimTranscript.substring(transcript.length);
+      }
+
       // Pisahkan kata terakhir dari interim untuk diberi cursor sticky
-      const match = interimTranscript.match(/(.*?)(\S+)?$/);
-      const prefix = match ? match[1] : interimTranscript;
+      const match = displayInterim.match(/(.*?)(\S+)?$/);
+      const prefix = match ? match[1] : displayInterim;
       const lastWord = match && match[2] ? match[2] : "";
 
       return (
@@ -327,6 +337,7 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, []);
   const settingsRef = useRef<HTMLDivElement>(null);
+  const categoryRef = useRef<HTMLDivElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -339,6 +350,15 @@ export default function Home() {
 
   // const placeholderRef = useRef<HTMLDivElement>(null);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isItemsExpanded, setIsItemsExpanded] = useState(false); // Default collapsed on mobile
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const checkDesktop = () => setIsDesktop(window.innerWidth >= 1024);
+    checkDesktop();
+    window.addEventListener('resize', checkDesktop);
+    return () => window.removeEventListener('resize', checkDesktop);
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -429,23 +449,40 @@ export default function Home() {
     }
   }, [isListening, isWakeWordMode, transcript, interimTranscript]);
 
-  const toggleWakeWord = useCallback(() => {
-    resumeAudioContext();
-    const newVal = !isWakeWordEnabled;
-    setIsWakeWordEnabled(newVal);
-    localStorage.setItem('vibelocator_wake', String(newVal));
-    // logEvent('toggle_wakeword', { enabled: newVal });
-    lastActivityRef.current = Date.now();
-    if (!newVal) {
-      stopListening();
-    }
-  }, [isWakeWordEnabled, stopListening]);
-
+  // Moved up to avoid TDZ lint error
   const getSTTLanguageCode = (lang: Language) => {
     if (lang === 'su') return 'su-ID';
     if (lang === 'id') return 'id-ID';
     return 'en-US';
   };
+
+  const toggleWakeWord = useCallback(() => {
+    resumeAudioContext();
+    const newVal = !isWakeWordEnabled;
+    setIsWakeWordEnabled(newVal);
+    localStorage.setItem('vibelocator_wake', String(newVal));
+    lastActivityRef.current = Date.now();
+
+    if (newVal) {
+      // Small delay to let the state update
+      setTimeout(() => {
+        switchMode(true, getSTTLanguageCode(language), (text) => {
+          console.log('[SR] Wake word detected:', text);
+          setIsWakingUp(true);
+          setIsSettingsExpanded(false);
+          lastActivityRef.current = Date.now();
+          setTimeout(() => setIsWakingUp(false), 1000);
+
+          // Switch to active listening
+          setTimeout(() => {
+            startListening(getSTTLanguageCode(language));
+          }, 300);
+        });
+      }, 100);
+    } else {
+      stopListening();
+    }
+  }, [isWakeWordEnabled, language, switchMode, stopListening, startListening]);
 
   useEffect(() => {
     // Check for inactivity every minute
@@ -494,26 +531,7 @@ export default function Home() {
     };
   }, [isWakeWordEnabled, standbyTimeout]);
 
-  useEffect(() => {
-    // If wake word is enabled and we are not doing anything, start wake word listening
-    if (isWakeWordEnabled && !isListening && processingStatus !== 'processing' && !isTyping) {
-      const timer = setTimeout(() => {
-        startListening(getSTTLanguageCode(language), true, () => {
-          setIsWakingUp(true);
-          setIsSettingsExpanded(false); // Close menu on wake!
-          lastActivityRef.current = Date.now(); // Reset standby timer immediately on wake!
-          setTimeout(() => setIsWakingUp(false), 1000);
-          // Wake word detected! Faster transition to avoid cutting off the command
-          setTimeout(() => {
-            if (isWakeWordEnabled) {
-              startListening(getSTTLanguageCode(language));
-            }
-          }, 300); // Reduced from 1200ms to 300ms
-        });
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [isWakeWordEnabled, isListening, processingStatus, language, startListening, isTyping]);
+  // Wake word auto-restart is now handled by the hook's switchMode and internal onend logic
 
   // Reset standby timer whenever there is voice activity
   useEffect(() => {
@@ -535,15 +553,18 @@ export default function Home() {
       if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
         setIsSettingsExpanded(false);
       }
+      if (categoryRef.current && !categoryRef.current.contains(event.target as Node)) {
+        setIsCategoryDropdownOpen(false);
+      }
     };
 
-    if (isSettingsExpanded) {
+    if (isSettingsExpanded || isCategoryDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isSettingsExpanded]);
+  }, [isSettingsExpanded, isCategoryDropdownOpen]);
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -588,7 +609,7 @@ export default function Home() {
       top: scrollTop > 0,
       bottom: Math.ceil(scrollTop + clientHeight) < scrollHeight
     });
-    
+
     // Calculate progress percentage (0 to 100)
     const totalScrollable = scrollHeight - clientHeight;
     const progress = totalScrollable > 0 ? (scrollTop / totalScrollable) * 100 : 0;
@@ -601,7 +622,7 @@ export default function Home() {
       top: scrollTop > 0,
       bottom: Math.ceil(scrollTop + clientHeight) < scrollHeight
     });
-    
+
     const totalScrollable = scrollHeight - clientHeight;
     const progress = totalScrollable > 0 ? (scrollTop / totalScrollable) * 100 : 0;
     setItemScrollProgress(progress);
@@ -687,7 +708,9 @@ export default function Home() {
     setProcessingStatus('processing');
 
     try {
-      const result = await processVoiceInput(textToProcess, items, language);
+      // Pass the last 10 messages for conversation context (exclude system messages if any, though all might be useful)
+      const historyContext = messages.filter(m => !m.isSystem).slice(-10).map(m => ({ role: m.role, content: m.content }));
+      const result = await processVoiceInput(textToProcess, items, language, historyContext);
 
       const assistantMsgId = crypto.randomUUID();
       const assistantMsg: Message = {
@@ -762,20 +785,24 @@ export default function Home() {
       };
 
       const techData = [
-        `Error: ${apiMessage || 'Unknown'}`,
-        `Status: ${statusCode}`,
+        `[DIAGNOSTIC REPORT - VILOCATOR V2.9]`,
+        `Timestamp: ${new Date().toISOString()}`,
+        `Error Type: ${apiMessage || 'Unknown API Exception'}`,
+        `Status Code: ${statusCode || 'N/A'}`,
+        `Current Model: ${GEMINI_MODEL || 'gemini-2.5-flash'}`,
         `Language: ${language}`,
-        `Inventory Count: ${items.length}`,
-        `Voice: ${voiceEnabled ? 'ON' : 'OFF'} (HQ: ${isHqEnabled ? 'YES' : 'NO'})`,
-        `UserAgent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A'}`,
-        `Timestamp: ${new Date().toISOString()}`
+        `Inventory: ${items.length} items`,
+        `Voice Context: ${voiceEnabled ? 'Active' : 'Muted'} (HQ: ${isHqEnabled ? 'Enabled' : 'Disabled'})`,
+        `Browser: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A'}`,
+        `-----------------------------------`,
+        `Request Text: "${textToProcess.substring(0, 50)}..."`
       ].join('\n');
 
       const feedbackMsg: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: language === 'su' ? "Bilih peryogi bantosan, mangga lapor ka developer." :
-          (language === 'id' ? "Jika butuh bantuan, silakan lapor ke developer ya." : "If you need help, please report to the developer."),
+        content: language === 'su' ? "Punten pisan, aya masalah téhnis. Mangga lapor ka Nandur Studio kanggo dibantos." :
+          (language === 'id' ? "Duh, sepertinya ada masalah teknis. Silakan lapor ke Nandur Studio agar segera diperbaiki." : "Technical glitch detected. Please report this to the developer for a quick fix."),
         timestamp: Date.now() + 1,
         isSystem: true,
         showFeedbackButton: true,
@@ -794,8 +821,30 @@ export default function Home() {
     } finally {
       setTranscript('');
       lastActivityRef.current = Date.now();
+
+      // If standby mode is still enabled, go back to it after processing
+      if (isWakeWordEnabled) {
+        setTimeout(() => {
+          switchMode(true, getSTTLanguageCode(language), (text) => {
+            setIsWakingUp(true);
+            setIsSettingsExpanded(false);
+            lastActivityRef.current = Date.now();
+            setTimeout(() => setIsWakingUp(false), 1000);
+            setTimeout(() => {
+              if (isWakeWordEnabled) {
+                startListening(getSTTLanguageCode(language));
+              }
+            }, 300);
+          });
+        }, 1000); // Wait for AI to finish speaking or for user to digest
+      }
     }
-  }, [items, processingStatus, saveItem, deleteItem, updateItem, findItems, setTranscript, language, manualText, messages, voiceEnabled, isHqEnabled, saveMessages, performSpeech]);
+  }, [items, processingStatus, saveItem, deleteItem, updateItem, findItems, setTranscript, language, manualText, messages, voiceEnabled, isHqEnabled, saveMessages, performSpeech, isWakeWordEnabled, switchMode, startListening]);
+
+  // Sync handleInput ref for the hook
+  useEffect(() => {
+    handleInputRef.current = handleInput;
+  }, [handleInput]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -804,13 +853,7 @@ export default function Home() {
     }
   };
 
-  // Process transcript when user stops speaking
-  useEffect(() => {
-    if (!isListening && transcript && transcript !== lastProcessedTranscript.current && !isWakeWordMode) {
-      lastProcessedTranscript.current = transcript;
-      handleInput(transcript);
-    }
-  }, [isListening, transcript, handleInput, isWakeWordMode]);
+  // Transcript processing is now handled by onSessionEnd callback in useSpeechRecognition
 
   const filteredItems = useMemo(() => items.filter(i =>
     i.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -941,7 +984,7 @@ export default function Home() {
   }[language]), [language]);
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen xl:h-screen xl:overflow-hidden">
       <header className={`fixed top-0 left-0 right-0 z-[1000] transition-all duration-300 ${isScrolled ? 'bg-gradient-to-b from-slate-950/80 to-transparent backdrop-blur-xl shadow-lg shadow-black/20' : 'bg-transparent'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tighter text-slate-100 flex items-center gap-3 md:gap-4">
@@ -954,7 +997,7 @@ export default function Home() {
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-[90px] pb-6 md:pb-10 relative w-full z-10 transform-gpu">
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-[90px] pb-6 md:pb-10 lg:pb-0 relative w-full z-10 transform-gpu flex flex-col gap-1 xl:overflow-hidden">
 
         {/* SMU + Tagline */}
         <div className="flex flex-col gap-2 mb-4">
@@ -974,14 +1017,14 @@ export default function Home() {
           </motion.p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-1 lg:gap-2 items-stretch lg:flex-1 xl:overflow-hidden">
 
           {/* Interaction Column: right on desktop, bottom on mobile */}
-          <div className="lg:col-span-5 w-full z-10 relative lg:order-2">
-            {/* Wrapper for sticky positioning on desktop layout */}
-            <div className="flex flex-col gap-2 lg:sticky lg:top-24 lg:h-[calc(100vh-120px)]">
+          <div className="lg:col-span-5 w-full z-10 relative lg:order-2 xl:h-full lg:flex lg:flex-col xl:overflow-hidden">
+            {/* Column Wrapper - Dashboard mode on desktop */}
+            <div className="flex flex-col gap-2 flex-1 min-h-0 overflow-hidden">
               {/* Header & Settings */}
-              <div className="flex flex-col gap-1 relative">
+              <div className="flex flex-col gap-2 relative">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 w-full">
                   <div className="flex flex-col gap-4 w-full z-20" ref={settingsRef}>
                     <div className="flex items-center justify-between w-full md:w-full gap-2" suppressHydrationWarning>
@@ -1141,7 +1184,7 @@ export default function Home() {
                             layout
                             onClick={toggleWakeWord}
                             initial={false}
-                            animate={{ 
+                            animate={{
                               borderBottomLeftRadius: isWakeWordEnabled ? "2px" : "24px",
                               borderBottomRightRadius: isWakeWordEnabled ? "2px" : "24px",
                             }}
@@ -1232,7 +1275,7 @@ export default function Home() {
                 <div className="relative rounded-xl overflow-hidden bg-slate-900/20 backdrop-blur-md flex flex-col h-[65vh] md:h-[75vh] lg:h-auto lg:flex-1 min-h-[300px] border border-white/5 shadow-xl">
                   {/* Scroll Progress Indicator */}
                   <div className="absolute top-0 right-0 w-[2px] h-full bg-white/[0.02] z-50 pointer-events-none">
-                    <motion.div 
+                    <motion.div
                       className="w-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
                       style={{ height: `${chatScrollProgress}%` }}
                     />
@@ -1241,7 +1284,7 @@ export default function Home() {
                   <div
                     ref={scrollRef}
                     onScroll={handleChatScroll}
-                    className={`flex-1 overflow-y-auto px-2 pt-4 flex flex-col gap-4 custom-scrollbar pb-4`}
+                    className="flex-1 overflow-y-auto p-2 flex flex-col gap-4 custom-scrollbar min-h-0"
                     suppressHydrationWarning
                   >
                     {messages.length === 0 && (
@@ -1262,11 +1305,11 @@ export default function Home() {
                             <div className="h-[1px] flex-1 bg-gradient-to-r from-white/10 via-white/10 to-transparent" />
                           </div>
 
-                          <div className="flex flex-col gap-3">
+                          <div className="flex flex-col gap-2">
                             {(() => {
                               const roleGroups: Message[][] = [];
                               let currentGroup: Message[] = [];
-                              
+
                               group.messages.forEach((msg, idx) => {
                                 if (idx > 0 && msg.role !== group.messages[idx - 1].role) {
                                   roleGroups.push(currentGroup);
@@ -1353,7 +1396,7 @@ export default function Home() {
                           key="processing-loader"
                           initial={{ opacity: 0, x: -10 }}
                           animate={{ opacity: 1, x: 0 }}
-                          className="flex items-start gap-1 mt-2"
+                          className="flex items-start gap-3 mt-2"
                         >
                           <div className="scale-[0.45] ml-0 origin-top-left shrink-0 w-8 -mt-1">
                             <ViloAvatar state="processing" />
@@ -1375,105 +1418,218 @@ export default function Home() {
 
                   <div className={`absolute top-0 left-0 right-0 h-6 pointer-events-none transition-opacity duration-300 ${chatScrollState.top ? 'opacity-100' : 'opacity-0'}`} style={{ background: 'linear-gradient(to bottom, rgba(52, 211, 153, 0.1), transparent)', borderTop: '1px solid rgba(52, 211, 153, 0.2)' }} />
                   <div className={`absolute bottom-0 left-0 right-0 h-6 pointer-events-none transition-opacity duration-300 ${chatScrollState.bottom ? 'opacity-100' : 'opacity-0'}`} style={{ background: 'linear-gradient(to top, rgba(52, 211, 153, 0.1), transparent)', borderBottom: '1px solid rgba(52, 211, 153, 0.2)' }} />
+                </div>
+              </div>
 
-                  {/* Input Area Inside Chat Container - in flow, never covered */}
-                  <div className="shrink-0 p-2 md:p-3 bg-gradient-to-t from-slate-900/95 via-slate-900/80 to-transparent">
-                    <div ref={inputContainerRef} className="relative glass rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-emerald-400/50 transition-all border border-white/5 shadow-xl min-h-[56px] bg-slate-900/60 backdrop-blur-xl">
-                      {isListening && !isWakeWordMode && (transcript || interimTranscript) ? (
-                        <div
-                          className="w-full bg-transparent p-3 md:p-4 pr-12 md:pr-14 text-sm md:text-base mt-1 min-h-[56px] max-h-[120px] overflow-y-auto custom-scrollbar flex items-center flex-wrap"
-                          id="listening-display"
-                        >
-                          {renderSTTContent()}
-                        </div>
-                      ) : (
-                        <textarea
-                          ref={(el) => {
-                            if (el) {
-                              el.style.height = 'auto';
-                              el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-                            }
-                          }}
-                          value={manualText}
-                          onChange={(e) => {
-                            if (isListening) {
-                              stopListening();
-                            }
-                            setManualText(e.target.value);
-                            lastActivityRef.current = Date.now();
-                            e.target.style.height = 'auto';
-                            e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-
-                            setIsTyping(true);
-                            if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-
-                            // Notifikasi hanya muncul jika mulai mengetik DAN sedang dalam mode siaga (WakeWordEnabled)
-                            if (!isTyping && isWakeWordEnabled) {
-                              const msgText = language === 'su' ? "Mode siaga dipareumkeun kusabab nuju ngetik." :
-                                (language === 'id' ? "Mode siaga dinonaktifkan karena ada aktivitas mengetik." : "Standby mode disabled due to typing activity.");
-                              const systemMsg: any = {
-                                id: crypto.randomUUID(),
-                                role: 'assistant',
-                                content: msgText,
-                                timestamp: Date.now(),
-                                isSystem: true
-                              };
-                              saveMessages([...messages, systemMsg]);
-                            }
-
-                            typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
-                          }}
-                          onKeyDown={handleKeyDown}
-                          placeholder={isListening && !isWakeWordMode ? "Nguping..." : uiStrings.manualPlaceholder}
-                          className={`w-full bg-transparent p-3 md:p-4 pr-12 md:pr-14 text-sm md:text-base text-slate-100 placeholder:text-slate-600 resize-none outline-none block mt-1 ${isListening && !isWakeWordMode ? 'hidden' : ''}`}
-                          rows={1}
-                          id="manual-input"
-                          maxLength={500}
-                        />
-                      )}
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-                        <button
-                          onClick={() => {
-                            if (isListening) {
-                              stopListening();
-                            } else {
-                              handleInput();
-                            }
-                          }}
-                          disabled={(isListening ? false : !manualText) || processingStatus === 'processing'}
-                          className={`w-8 h-8 rounded-md flex items-center justify-center transition-all shrink-0 ${(isListening || manualText) && processingStatus !== 'processing'
-                            ? 'bg-emerald-400 text-slate-900 shadow-lg shadow-emerald-400/20 hover:scale-105'
-                            : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                            }`}
-                          id="send-button"
-                          title={isListening ? uiStrings.listening : uiStrings.sendBtn}
-                        >
-                          {processingStatus === 'processing' ? (
-                            <Loader2 className="w-4 h-4 animate-spin text-emerald-900" />
-                          ) : (isListening ? (
-                            <Mic className="w-4 h-4" />
-                          ) : (
-                            <Send className="w-4 h-4 -ml-0.5" />
-                          ))}
-                        </button>
+              {/* Sticky Action Center (Desktop) - Grouped Textarea and Mic */}
+              <div className="hidden lg:flex flex-col w-full shrink-0 mt-auto sticky bottom-0 z-20 gap-0 pt-0">
+                {/* Desktop Textarea - Transparent Background */}
+                <div className="shrink-0 w-full">
+                  <div ref={inputContainerRef} className="relative glass rounded-t-lg rounded-b-none overflow-hidden focus-within:ring-2 focus-within:ring-emerald-400/50 transition-all border border-white/5 shadow-xl min-h-[56px] bg-slate-900/60 backdrop-blur-xl">
+                    {isListening && !isWakeWordMode && (transcript || interimTranscript) ? (
+                      <div
+                        className="w-full bg-transparent p-3 md:p-4 pr-12 md:pr-14 text-sm md:text-base mt-1 min-h-[56px] max-h-[120px] overflow-y-auto custom-scrollbar flex items-center flex-wrap"
+                        id="listening-display-desktop"
+                      >
+                        {renderSTTContent()}
                       </div>
+                    ) : (
+                      <textarea
+                        ref={(el) => {
+                          if (el) {
+                            el.style.height = 'auto';
+                            el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+                          }
+                        }}
+                        value={manualText}
+                        onChange={(e) => {
+                          if (isListening) {
+                            stopListening();
+                          }
+                          setManualText(e.target.value);
+                          lastActivityRef.current = Date.now();
+                          e.target.style.height = 'auto';
+                          e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+
+                          setIsTyping(true);
+                          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+                          if (!isTyping && isWakeWordEnabled) {
+                            const msgText = language === 'su' ? "Mode siaga dipareumkeun kusabab nuju ngetik." :
+                              (language === 'id' ? "Mode siaga dinonaktifkan karena ada aktivitas mengetik." : "Standby mode disabled due to typing activity.");
+                            const systemMsg: any = {
+                              id: crypto.randomUUID(),
+                              role: 'assistant',
+                              content: msgText,
+                              timestamp: Date.now(),
+                              isSystem: true
+                            };
+                            saveMessages([...messages, systemMsg]);
+                          }
+
+                          typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
+                        }}
+                        onKeyDown={handleKeyDown}
+                        placeholder={isListening && !isWakeWordMode ? "Nguping..." : uiStrings.manualPlaceholder}
+                        className={`w-full bg-transparent p-3 md:p-4 pr-12 md:pr-14 text-sm md:text-base text-slate-100 placeholder:text-slate-600 resize-none outline-none block mt-1 ${isListening && !isWakeWordMode ? 'hidden' : ''}`}
+                        rows={1}
+                        id="manual-input-desktop"
+                        maxLength={500}
+                      />
+                    )}
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+                      <button
+                        onClick={() => {
+                          if (isListening) {
+                            stopListening();
+                          } else {
+                            handleInput();
+                          }
+                        }}
+                        disabled={(isListening ? false : !manualText) || processingStatus === 'processing'}
+                        className={`w-8 h-8 rounded-md flex items-center justify-center transition-all shrink-0 ${(isListening || manualText) && processingStatus !== 'processing'
+                          ? 'bg-emerald-400 text-slate-900 shadow-lg shadow-emerald-400/20 hover:scale-105'
+                          : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                          }`}
+                        id="send-button-desktop"
+                        title={uiStrings.sendBtn}
+                      >
+                        {processingStatus === 'processing' ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-emerald-900" />
+                        ) : (isListening ? (
+                          <Mic className="w-4 h-4" />
+                        ) : (
+                          <Send className="w-4 h-4 -ml-0.5" />
+                        ))}
+                      </button>
                     </div>
+                  </div>
+                </div>
+
+                {/* Desktop Mic - With Isolated Glass Cloud Background */}
+                <div className="flex w-full justify-center pt-1 pb-2 rounded-b-2xl rounded-t-none glass border border-t-0 border-white/5 shadow-xl bg-slate-900/60 backdrop-blur-xl">
+                  <MicButton
+                    isListening={isListening && !isWakeWordMode}
+                    onStart={() => {
+                      if (isWakeWordMode) stopListening();
+                      setIsSettingsExpanded(false);
+                      startListening(getSTTLanguageCode(language));
+                    }}
+                    onStop={stopListening}
+                    isLoading={processingStatus === 'processing'}
+                    language={language}
+                    isStandby={isWakeWordMode}
+                    standbyProgress={standbyProgress}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile Sticky Action Center - Isolated Glass for Mic Only */}
+          <div className="lg:hidden sticky bottom-0 z-40 pointer-events-none w-full">
+            <div className="pointer-events-auto w-full flex flex-col items-center">
+              {/* Mobile Textarea - Transparent Background */}
+              <div className="w-full">
+                <div className="relative glass rounded-t-lg rounded-b-none overflow-hidden focus-within:ring-2 focus-within:ring-emerald-400/50 transition-all border border-white/5 shadow-xl min-h-[56px] bg-slate-900/60 backdrop-blur-xl">
+                  {isListening && !isWakeWordMode && (transcript || interimTranscript) ? (
+                    <div
+                      className="w-full bg-transparent p-3 md:p-4 pr-12 md:pr-14 text-sm md:text-base mt-1 min-h-[56px] max-h-[120px] overflow-y-auto custom-scrollbar flex items-center flex-wrap"
+                      id="listening-display-mobile"
+                    >
+                      {renderSTTContent()}
+                    </div>
+                  ) : (
+                    <textarea
+                      ref={(el) => {
+                        if (el) {
+                          el.style.height = 'auto';
+                          el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+                        }
+                      }}
+                      value={manualText}
+                      onChange={(e) => {
+                        if (isListening) {
+                          stopListening();
+                        }
+                        setManualText(e.target.value);
+                        lastActivityRef.current = Date.now();
+                        e.target.style.height = 'auto';
+                        e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+
+                        setIsTyping(true);
+                        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+                        if (!isTyping && isWakeWordEnabled) {
+                          const msgText = language === 'su' ? "Mode siaga dipareumkeun kusabab nuju ngetik." :
+                            (language === 'id' ? "Mode siaga dinonaktifkan karena ada aktivitas mengetik." : "Standby mode disabled due to typing activity.");
+                          const systemMsg: any = {
+                            id: crypto.randomUUID(),
+                            role: 'assistant',
+                            content: msgText,
+                            timestamp: Date.now(),
+                            isSystem: true
+                          };
+                          saveMessages([...messages, systemMsg]);
+                        }
+
+                        typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
+                      }}
+                      onKeyDown={handleKeyDown}
+                      placeholder={isListening && !isWakeWordMode ? "Nguping..." : uiStrings.manualPlaceholder}
+                      className={`w-full bg-transparent p-3 md:p-4 pr-12 md:pr-14 text-sm md:text-base text-slate-100 placeholder:text-slate-600 resize-none outline-none block mt-1 ${isListening && !isWakeWordMode ? 'hidden' : ''}`}
+                      rows={1}
+                      id="manual-input-mobile"
+                      maxLength={500}
+                    />
+                  )}
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+                    <button
+                      onClick={() => {
+                        if (isListening) {
+                          stopListening();
+                        } else {
+                          handleInput();
+                        }
+                      }}
+                      disabled={(isListening ? false : !manualText) || processingStatus === 'processing'}
+                      className={`w-8 h-8 rounded-md flex items-center justify-center transition-all shrink-0 ${(isListening || manualText) && processingStatus !== 'processing'
+                        ? 'bg-emerald-400 text-slate-900 shadow-lg shadow-emerald-400/20 hover:scale-105'
+                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                        }`}
+                      id="send-button-mobile"
+                      title={uiStrings.sendBtn}
+                    >
+                      {processingStatus === 'processing' ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-emerald-900" />
+                      ) : (isListening ? (
+                        <Mic className="w-4 h-4" />
+                      ) : (
+                        <Send className="w-4 h-4 -ml-0.5" />
+                      ))}
+                    </button>
                   </div>
                 </div>
               </div>
 
-              {/* Action Center Mic (Desktop) - Sticky floating */}
-              <div className="hidden lg:flex w-full justify-center shrink-0 mt-auto sticky bottom-4 z-20 pt-2">
+              {/* Mobile Mic - Perfectly Matched Glass Style with Textarea */}
+              <div
+                className="pointer-events-auto w-full flex flex-col items-center justify-center pt-1 pb-1 rounded-b-2xl rounded-t-none glass border border-t-0 border-white/5 shadow-xl bg-slate-900/60 backdrop-blur-xl"
+              >
                 <MicButton
                   isListening={isListening && !isWakeWordMode}
                   onStart={() => {
                     if (isWakeWordMode) stopListening();
                     setIsSettingsExpanded(false);
-                    startListening(getSTTLanguageCode(language));
+                    // Add a tiny delay to ensure the browser has released the mic from standby mode
+                    setTimeout(() => {
+                      startListening(getSTTLanguageCode(language));
+                    }, 100);
                   }}
                   onStop={stopListening}
                   isLoading={processingStatus === 'processing'}
                   language={language}
+                  compact
                   isStandby={isWakeWordMode}
                   standbyProgress={standbyProgress}
                 />
@@ -1481,50 +1637,50 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Mobile Sticky Mic Button */}
-          <div className="lg:hidden sticky bottom-4 z-40 pointer-events-none flex flex-col items-center justify-center w-full mb-2 gap-1">
-            <div className="pointer-events-auto flex items-center justify-center shrink-0">
-              <MicButton
-                isListening={isListening && !isWakeWordMode}
-                onStart={() => {
-                  if (isWakeWordMode) stopListening();
-                  setIsSettingsExpanded(false);
-                  startListening(getSTTLanguageCode(language));
-                }}
-                onStop={stopListening}
-                isLoading={processingStatus === 'processing'}
-                language={language}
-                compact
-                isStandby={isWakeWordMode}
-                standbyProgress={standbyProgress}
-              />
-            </div>
-          </div>
-
           {/* Items Column: left on desktop, top on mobile */}
-          <div className="lg:col-span-7 flex flex-col gap-3 lg:gap-4 w-full mt-2 lg:mt-0 lg:pr-6 lg:order-1">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mt-2 lg:mt-0">
-              <div className="flex items-center gap-2 px-1">
-                <h3 className="text-slate-500 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
-                  <Search className="w-3 h-3" />
+          <div className="lg:col-span-7 w-full mt-2 lg:mt-0 lg:pr-6 lg:order-1 transition-all duration-300 xl:h-full lg:flex lg:flex-col xl:overflow-hidden min-h-0 gap-2">
+            {/* Header with Title and Toggle */}
+            {/* Items Content Wrapper - To group header and list with gap-2 */}
+            <div className="flex flex-col gap-2 lg:flex-1 min-h-0">
+              {/* Search Input Container */}
+              <AnimatePresence>
+                {(isItemsExpanded || isDesktop) && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="w-full lg:flex lg:h-auto lg:opacity-100 overflow-hidden"
+                  >
+                    <div className="relative flex-grow">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder={uiStrings.placeholder}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl py-2 pl-12 pr-4 focus:outline-none focus:border-emerald-400/50 transition-all text-slate-200 text-sm"
+                        value={searchQuery}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          lastActivityRef.current = Date.now();
+                        }}
+                        id="search-input"
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Items Header - Styled like Chat History, Always visible on mobile as a toggle */}
+              <div className="flex items-center justify-between px-1 shrink-0">
+                <h3
+                  className="text-slate-500 text-xs font-bold uppercase tracking-widest flex items-center gap-2 cursor-pointer lg:cursor-default"
+                  onClick={() => { if (!isDesktop) setIsItemsExpanded(!isItemsExpanded); }}
+                >
+                  <Package className="w-3 h-3" />
                   {uiStrings.listTitle}
+                  <ChevronDown className={`w-3 h-3 transition-transform duration-300 lg:hidden ${isItemsExpanded ? 'rotate-180' : ''}`} />
                 </h3>
-              </div>
-              <div className="relative w-full md:w-80 shrink-0 flex items-center gap-2">
-                <div className="relative flex-grow">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <input
-                    type="text"
-                    placeholder={uiStrings.placeholder}
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-12 pr-4 focus:outline-none focus:border-emerald-400/50 transition-all text-slate-200"
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      lastActivityRef.current = Date.now();
-                    }}
-                    id="search-input"
-                  />
-                </div>
+
+                {/* Clear All Button - Now in Header, matching Clear History style */}
                 {items.length > 0 && (
                   <button
                     onClick={() => {
@@ -1537,69 +1693,129 @@ export default function Home() {
                         clearAllTimeoutRef.current = setTimeout(() => setConfirmClearAll(false), 3000);
                       }
                     }}
-                    className={`p-3 transition-all rounded-2xl flex items-center justify-center shrink-0 border border-white/5 ${confirmClearAll ? 'bg-red-400 text-slate-900 font-bold text-[10px] px-3 uppercase tracking-widest' : 'bg-white/5 text-slate-600 hover:text-red-400 hover:bg-red-400/10'}`}
-                    title={uiStrings.clearItems}
+                    className={`text-[10px] font-bold uppercase tracking-tighter transition-all flex items-center gap-1 ml-auto ${confirmClearAll ? 'text-slate-900 bg-red-400 px-3 py-1.5 rounded-lg border-2 border-red-400' : 'text-slate-600 hover:text-red-400'}`}
                   >
-                    {confirmClearAll ? (language === 'en' ? 'Sure?' : (language === 'id' ? 'Yakin?' : 'Leres?')) : <Trash2 className="w-5 h-5" />}
+                    {confirmClearAll ? (language === 'en' ? 'Sure?' : (language === 'id' ? 'Yakin?' : 'Leres?')) : (
+                      <>
+                        <Trash2 className="w-3 h-3" />
+                        {uiStrings.clearItems}
+                      </>
+                    )}
                   </button>
                 )}
               </div>
-            </div>
-
-            {items.length > 0 && (
-              <div className="flex flex-wrap gap-2 px-1 overflow-x-auto pb-2 custom-scrollbar mask-gradient-right">
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap ${!searchQuery ? 'bg-emerald-400 text-slate-900 shadow-lg shadow-emerald-400/20' : 'bg-white/5 text-slate-500 hover:text-slate-300 border border-white/5'}`}
-                >
-                  {uiStrings.allBtn}
-                </button>
-                {Array.from(new Set(items.map(i => i.category).filter(Boolean))).map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => setSearchQuery(cat)}
-                    className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap ${searchQuery === cat ? 'bg-emerald-400 text-slate-900 shadow-lg shadow-emerald-400/20' : 'bg-white/5 text-slate-500 hover:text-slate-300 border border-white/5'}`}
+              <AnimatePresence>
+                {(isItemsExpanded || isDesktop) && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="flex flex-col gap-2 lg:flex lg:h-auto lg:opacity-100 overflow-hidden lg:flex-1 min-h-0"
                   >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            )}
+                  {/* Category Filters - Now in a sleek dropdown bar matching language selector style */}
+                  {items.length > 0 && (
+                    <div ref={categoryRef} className="flex items-center gap-2 px-1 relative">
+                      {/* Category Pill Container */}
+                      <div className="glass rounded-2xl p-1 flex items-center gap-1 flex-1 md:flex-none custom-scrollbar overflow-x-auto min-w-0">
+                        <Package className="w-4 h-4 ml-2 mr-1 text-slate-400 shrink-0" />
+                        <button
+                          onClick={() => setSearchQuery('')}
+                          className={`px-3 py-1.5 rounded-xl text-[10px] sm:text-xs font-bold transition-all shrink-0 ${!searchQuery ? 'bg-emerald-400 text-slate-900' : 'text-slate-400 hover:text-slate-200'}`}
+                        >
+                          {uiStrings.allBtn}
+                        </button>
+                        
+                        {/* Selected Category Label (if not 'All') */}
+                        {searchQuery && Array.from(new Set(items.map(i => i.category))).includes(searchQuery) && (
+                          <div className="flex items-center gap-1 bg-emerald-400/10 px-2.5 py-1.5 rounded-xl border border-emerald-400/20 shrink-0">
+                            <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">{searchQuery}</span>
+                            <button 
+                              onClick={() => setSearchQuery('')}
+                              className="hover:bg-emerald-400/20 rounded-full p-0.5 transition-colors"
+                            >
+                              <X className="w-2.5 h-2.5 text-emerald-400" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
 
-            <div className="mt-2 text-left w-full relative rounded-xl overflow-hidden bg-slate-900/20 backdrop-blur-md flex flex-col h-[65vh] md:h-[75vh] lg:h-auto lg:flex-1 min-h-[300px] border border-white/5 shadow-xl">
-              {/* Item Scroll Progress Indicator */}
-              <div className="absolute top-0 right-0 w-[2px] h-full bg-white/[0.02] z-50 pointer-events-none">
-                <motion.div 
-                  className="w-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
-                  style={{ height: `${itemScrollProgress}%` }}
-                />
-              </div>
+                      {/* Dropdown Button */}
+                      <button
+                        onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                        className="glass p-2 sm:p-2.5 rounded-2xl text-slate-500 hover:text-emerald-400 hover:bg-emerald-400/5 transition-all shrink-0 aspect-square flex items-center justify-center"
+                        title="Filter Category"
+                      >
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
+                      </button>
 
-              {/* Top Gradient Shadow */}
-              <div 
-                className={`absolute top-0 left-0 right-0 h-8 pointer-events-none transition-opacity duration-300 z-20 ${itemScrollState.top ? 'opacity-100' : 'opacity-0'}`}
-                style={{ background: 'linear-gradient(rgba(52, 211, 153, 0.08), transparent)', borderTop: '1px solid rgba(52, 211, 153, 0.1)' }}
-              />
+                      {/* Category Dropdown Menu */}
+                      <AnimatePresence>
+                        {isCategoryDropdownOpen && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                            className="absolute top-full right-1 mt-2 w-56 glass p-2 rounded-[1.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[60] border border-white/10 backdrop-blur-3xl"
+                          >
+                            <div className="flex flex-col gap-1 max-h-64 overflow-y-auto custom-scrollbar p-1">
+                              <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] px-3 py-2 border-b border-white/5 mb-1">
+                                {language === 'en' ? 'Select Category' : (language === 'id' ? 'Pilih Kategori' : 'Pilih Kategori')}
+                              </p>
+                              {Array.from(new Set(items.map(i => i.category).filter(Boolean))).map(cat => (
+                                <button
+                                  key={cat}
+                                  onClick={() => {
+                                    setSearchQuery(cat);
+                                    setIsCategoryDropdownOpen(false);
+                                  }}
+                                  className={`w-full text-left px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${searchQuery === cat ? 'bg-emerald-400 text-slate-900 shadow-lg shadow-emerald-400/20' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}
+                                >
+                                  {cat}
+                                </button>
+                              ))}
+                              {Array.from(new Set(items.map(i => i.category).filter(Boolean))).length === 0 && (
+                                <p className="text-[10px] text-slate-500 italic px-4 py-3 text-center">No categories yet</p>
+                              )}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
 
-              {/* Bottom Gradient Shadow */}
-              <div 
-                className={`absolute bottom-0 left-0 right-0 h-8 pointer-events-none transition-opacity duration-300 z-20 ${itemScrollState.bottom ? 'opacity-100' : 'opacity-0'}`}
-                style={{ background: 'linear-gradient(to top, rgba(52, 211, 153, 0.08), transparent)', borderBottom: '1px solid rgba(52, 211, 153, 0.1)' }}
-              />
-
-              <div
-                ref={itemScrollRef}
-                onScroll={handleItemScroll}
-                className="flex-1 flex flex-col overflow-y-auto custom-scrollbar px-2 pt-4 pb-4"
-              >
-                <ItemList items={filteredItems} onDelete={deleteItem} language={language} searchQuery={searchQuery} />
-              </div>
+                    {/* Items List Container */}
+                    <div className="mt-2 lg:mt-0 text-left w-full relative rounded-xl overflow-hidden bg-slate-900/20 backdrop-blur-md flex flex-col h-[65vh] md:h-[75vh] lg:h-auto lg:flex-1 min-h-[300px] border border-white/5 shadow-xl">
+                      <div className="absolute top-0 right-0 w-[2px] h-full bg-white/[0.02] z-50 pointer-events-none">
+                        <motion.div
+                          className="w-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
+                          style={{ height: `${itemScrollProgress}%` }}
+                        />
+                      </div>
+                      <div
+                        className={`absolute top-0 left-0 right-0 h-8 pointer-events-none transition-opacity duration-300 z-20 ${itemScrollState.top ? 'opacity-100' : 'opacity-0'}`}
+                        style={{ background: 'linear-gradient(rgba(52, 211, 153, 0.08), transparent)', borderTop: '1px solid rgba(52, 211, 153, 0.1)' }}
+                      />
+                      <div
+                        className={`absolute bottom-0 left-0 right-0 h-8 pointer-events-none transition-opacity duration-300 z-20 ${itemScrollState.bottom ? 'opacity-100' : 'opacity-0'}`}
+                        style={{ background: 'linear-gradient(to top, rgba(52, 211, 153, 0.08), transparent)', borderBottom: '1px solid rgba(52, 211, 153, 0.1)' }}
+                      />
+                      <div
+                        ref={itemScrollRef}
+                        onScroll={handleItemScroll}
+                        className="flex-1 overflow-y-auto p-2 flex flex-col gap-4 custom-scrollbar min-h-0"
+                      >
+                        <ItemList items={filteredItems} onDelete={deleteItem} language={language} searchQuery={searchQuery} />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         </div>
 
         {/* Footer Decoration */}
-        <div className="mt-8 md:mt-12 text-center opacity-40 text-[10px] tracking-widest uppercase font-bold text-slate-500 pb-6 w-full col-span-1 lg:col-span-12">
+        <div className="mt-4 lg:mt-0 pt-2 text-center opacity-40 text-[10px] tracking-widest uppercase font-bold text-slate-500 pb-2 md:pb-6 lg:pb-0 w-full col-span-1 lg:col-span-12">
           <div className="mb-2">VibeLocator v2.8 (c70639b) • {uiStrings.footerThanks}</div>
           <a
             href="https://linkedin.com/in/nandangduryat"

@@ -20,9 +20,12 @@ export function useItems() {
 
   const saveItem = useCallback((name: string, location: string, category: string = 'Lainnya') => {
     setItems(prev => {
+      const safeName = name || '';
+      const safeLocation = location || '';
+      
       // Prevent exact duplicate
       const isDuplicate = prev.some(
-        i => i.name.toLowerCase() === name.toLowerCase() && i.location.toLowerCase() === location.toLowerCase()
+        i => (i.name || '').toLowerCase() === safeName.toLowerCase() && (i.location || '').toLowerCase() === safeLocation.toLowerCase()
       );
       if (isDuplicate) return prev;
 
@@ -31,8 +34,8 @@ export function useItems() {
 
       const newItem: Item = {
         id: crypto.randomUUID(),
-        name: name.slice(0, 100),         // Sanitize field lengths
-        location: location.slice(0, 100),
+        name: safeName.slice(0, 100),         // Sanitize field lengths
+        location: safeLocation.slice(0, 100),
         category: (category || 'Lainnya').slice(0, 50),
         timestamp: Date.now(),
       };
@@ -44,8 +47,10 @@ export function useItems() {
 
   const updateItem = useCallback((id: string, name: string, location: string, category?: string) => {
     setItems(prev => {
+      const safeName = name || '';
+      const safeLocation = location || '';
       const updated = prev.map(i => 
-        i.id === id ? { ...i, name, location, category: category || i.category, timestamp: Date.now() } : i
+        i.id === id ? { ...i, name: safeName, location: safeLocation, category: category || i.category, timestamp: Date.now() } : i
       );
       localStorage.setItem('vibelocator_items', JSON.stringify(updated));
       return updated;
@@ -66,11 +71,13 @@ export function useItems() {
   }, []);
 
   const findItem = useCallback((name: string) => {
-    return items.find(i => i.name.toLowerCase().includes(name.toLowerCase()));
+    const searchName = (name || '').toLowerCase();
+    return items.find(i => (i.name || '').toLowerCase().includes(searchName));
   }, [items]);
 
   const findItems = useCallback((name: string) => {
-    return items.filter(i => i.name.toLowerCase().includes(name.toLowerCase()));
+    const searchName = (name || '').toLowerCase();
+    return items.filter(i => (i.name || '').toLowerCase().includes(searchName));
   }, [items]);
 
   return { items, saveItem, updateItem, deleteItem, clearItems, findItem, findItems };
