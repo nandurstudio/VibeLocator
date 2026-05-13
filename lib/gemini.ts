@@ -59,6 +59,13 @@ export async function processVoiceInput(text: string, currentItems: any[], lang:
     - FIND: Jika user mencari lokasi barang tertentu ATAU bertanya tentang isi inventori secara umum ("punya apa aja?", "list barangku", dll).
     - NONE: Jika hanya ngobrol santai, perintah tidak masuk akal, atau tidak ada aksi pada inventori.
     
+    ATURAN AKSI (SANGAT PENTING):
+    1. VALIDASI INFORMASI: JANGAN gunakan aksi SAVE, UPDATE, atau DELETE jika informasi penting (seperti Nama Barang atau Lokasi) belum lengkap atau masih menggantung.
+    2. MODE TANYA: Jika informasi kurang, wajib gunakan action: "NONE" dan avatarState: "confirming" untuk meminta kejelasan dari user.
+    3. PRIORITAS UPDATE: Jika barang yang dimaksud sudah ada di daftar inventori, prioritaskan aksi UPDATE daripada SAVE untuk memperbarui lokasinya.
+    4. KONFIRMASI AMBIGU: Jika ada lebih dari satu barang yang cocok dengan permintaan user, jangan asal pilih. Gunakan action: "NONE" untuk bertanya "Yang mana yang dimaksud?".
+    5. SAVE VALID: Hanya gunakan SAVE jika Nama Barang dan Lokasi sudah disebutkan secara eksplisit dan barang tersebut belum ada di daftar.
+    
     PENTING: Gunakan bahasa ${languageNames[lang]} sepenuhnya secara organik. Jaga agar JSON valid.
   `;
 

@@ -2,6 +2,7 @@
   "name": "ai-studio-applet",
   "version": "0.2.7",
   "private": true,
+  "author": "nandurstudio",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
